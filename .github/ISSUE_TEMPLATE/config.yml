@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/koko2376/dsh-lulux-flow/blob/main/SECURITY.md
+    about: Please report vulnerabilities privately by email, as described in SECURITY.md.

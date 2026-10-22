@@ -1,0 +1,19 @@
+DSH-LULUX Flow (DSH工作流（LULUX Flow）)
+Copyright 2026 koko
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The browser bundle (lib/client.js) includes third-party software distributed
+under the MIT, ISC and BSD-3-Clause licenses. Their copyright notices and
+license texts are reproduced in THIRD_PARTY_LICENSES.md.
+
+The kernel avatar artwork in client/assets/avatars/ is original work by the
+author and is licensed with this project under the Apache License 2.0. The
+characters only nod to the tools they stand for; they are not official logos
+and imply no endorsement by any vendor.
+
+This is an unofficial community project. It is not affiliated with, endorsed
+by, or sponsored by DeepSeek, Anthropic, OpenAI, Google, Alibaba or xAI.
+"Claude Code", "Codex", "Gemini CLI", "Qwen Code", "Grok" and "DeepSeek" are
+trademarks of their respective owners and are used here only to identify the
+software this plugin interoperates with.

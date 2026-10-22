@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs><clipPath id="body"><path d="M120 30 C150 26 168 36 182 30 C214 26 238 66 232 128 C226 190 190 226 130 228 C70 230 26 192 28 130 C30 76 70 36 120 30 Z"/></clipPath></defs>
+  <g transform="translate(130 128) scale(1.07) translate(-130 -128)">
+    <path d="M120 30 C150 26 168 36 182 30 C214 26 238 66 232 128 C226 190 190 226 130 228 C70 230 26 192 28 130 C30 76 70 36 120 30 Z" transform="translate(6 6)" fill="#4630b8"/>
+    <path d="M120 30 C150 26 168 36 182 30 C214 26 238 66 232 128 C226 190 190 226 130 228 C70 230 26 192 28 130 C30 76 70 36 120 30 Z" transform="translate(-5 -3)" fill="#a493ff"/>
+    <path d="M120 30 C150 26 168 36 182 30 C214 26 238 66 232 128 C226 190 190 226 130 228 C70 230 26 192 28 130 C30 76 70 36 120 30 Z" fill="#6a50f2"/>
+    <g clip-path="url(#body)"><ellipse cx="120" cy="222" rx="74" ry="21" fill="#e6e0ff" opacity=".92"/></g>
+    <rect x="137" y="114" width="30" height="64" rx="15" fill="#fff" transform="rotate(-12 152 146)"/><rect x="176" y="106" width="30" height="64" rx="15" fill="#fff" transform="rotate(-12 191 138)"/>
+    <g transform="translate(7 9)"><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"><path d="M78 52 L98 63.5 L98 86.5 L78 98 L58 86.5 L58 63.5 Z"/><path d="M85 88 L98 105"/></g></g>
+  </g>
+</svg>

@@ -1,0 +1,52 @@
+# DSH-LULUX Flow profile layer.
+#
+# The main row has no `config`, so the plugin runs with the defaults from its
+# Config schema (src/index.ts). To override, add a row with the same id to your
+# profile's cordis.patch.yml with a `config` object: patch layers replace a
+# row's config, they do not deep-merge, so restate every key you want to keep.
+#
+# The `lulux-flow-subagent-*` rows expose LULUX Flow's subagent providers to the model
+# through DSH's own subagent tool (one tool per CLI, like the official
+# Claude Code / Codex bundles). They are off by default so installing LULUX Flow
+# does not add tools to every agent; enable the ones you want with, e.g.:
+#
+#   - id: lulux-flow-subagent-claude-code
+#     disabled: false
+- insert:
+    - id: dsh-lulux-flow
+      name: dsh-lulux-flow
+    - id: lulux-flow-subagent-claude-code
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: lulux-flow-claude-code
+        toolName: lulux_flow_subagent_claude_code
+        maxDepth: provider-managed
+    - id: lulux-flow-subagent-codex
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: lulux-flow-codex
+        toolName: lulux_flow_subagent_codex
+        maxDepth: provider-managed
+    - id: lulux-flow-subagent-gemini-cli
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: lulux-flow-gemini-cli
+        toolName: lulux_flow_subagent_gemini_cli
+        maxDepth: provider-managed
+    - id: lulux-flow-subagent-qwen-code
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: lulux-flow-qwen-code
+        toolName: lulux_flow_subagent_qwen_code
+        maxDepth: provider-managed
+    - id: lulux-flow-subagent-grok
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: lulux-flow-grok
+        toolName: lulux_flow_subagent_grok
+        maxDepth: provider-managed

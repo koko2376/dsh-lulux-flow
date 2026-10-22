@@ -1,0 +1,26 @@
+# gitleaks configuration for dsh-lulux-flow.
+# Default rules plus one rule for this plugin's own gateway tokens.
+# The allowlist covers only the fake credentials used by the test suite.
+
+title = "dsh-lulux-flow"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "dsh-lulux-flow-gateway-token"
+description = "DSH-LULUX Flow run-scoped gateway token"
+regex = '''\bdshlf_[A-Za-z0-9_-]{32,}\b'''
+keywords = ["dshlf_"]
+
+[allowlist]
+description = "Fake credentials in test fixtures only"
+paths = [
+  '''^test/fixtures/''',
+]
+regexes = [
+  '''sk-should-not-leak-0+''',
+  '''sk-ant-0123456789abcdefghij''',
+  '''dshlf_SECRET''',
+  '''dshlf_abcdefghijklmnopqrstuvwxyz0123''',
+]

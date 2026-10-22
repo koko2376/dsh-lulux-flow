@@ -1,0 +1,86 @@
+name: Bug report
+description: Something does not work as documented.
+title: "[bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Do not paste API keys, gateway tokens (`dshlf_…`) or private paths.**
+        Security issues: please email the address in SECURITY.md instead of opening an issue.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Pick Claude Code in the session kernel picker
+        2. Send "…"
+        3. See error "…"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Gateway / CLI in a chat session
+        - Subagent provider
+        - Workflow canvas / editor
+        - Workflow run (engine, triggers, webhooks, cron)
+        - Kernel install / detection
+        - Settings
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: kernel
+    attributes:
+      label: CLI involved
+      multiple: true
+      options:
+        - None
+        - Claude Code
+        - Codex
+        - Gemini CLI
+        - Qwen Code
+        - Grok CLI
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: dsh-lulux-flow, DSH, Node.js, and the CLI version (e.g. `claude --version`).
+      placeholder: "dsh-lulux-flow 0.1.0, DSH 0.2.1-rc.2, Node 22.15.0, Claude Code 2.1.x"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and DSH surface
+      placeholder: "macOS 15 arm64, dsh web"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Kernel mode and permission
+      options:
+        - Not relevant
+        - scoped / read-only
+        - scoped / ask
+        - scoped / edit
+        - scoped / full
+        - global (native login)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: DSH log lines starting with `[dsh-lulux-flow]`, or the node trace from the run inspector. Redact secrets.
+      render: text
