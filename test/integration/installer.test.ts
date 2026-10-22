@@ -11,7 +11,7 @@
  */
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
@@ -80,8 +80,14 @@ const listen = async (server: Server): Promise<string> => {
 
 const def: KernelDefinition = { ...findKernel('qwen-code')!, id: 'fake-cli', name: 'Fake CLI', npmPackage: 'lf-fake-cli', bin: 'lf-fake-cli', minVersion: '>=1.0.0' }
 
-async function install(options: { canonical: string; mirrors: string[]; trustMirror?: boolean }): Promise<InstallState & { dir: string }> {
-  const dir = tempDir('lf-install-')
+async function install(options: { canonical: string; mirrors: string[]; trustMirror?: boolean; viaSymlink?: boolean }): Promise<InstallState & { dir: string }> {
+  let dir = tempDir('lf-install-')
+  if (options.viaSymlink === true) {
+    // the data dir reached through a link, like /var -> /private/var on macOS
+    const link = `${dir}-link`
+    symlinkSync(dir, link, process.platform === 'win32' ? 'junction' : 'dir')
+    dir = link
+  }
   process.env.npm_config_cache = join(dir, 'cache') // fresh cache: nothing can be served from an earlier test
   const selector = new RegistrySelector({ candidates: () => options.mirrors, override: () => undefined, ttlMs: 1000, timeoutMs: 3000, canonical: options.canonical })
   const installer = new KernelInstaller({ installRoot: join(dir, 'kernels'), selector, timeoutMs: 120_000, canonicalRegistry: options.canonical, fetchRetries: 0, trustMirror: () => options.trustMirror === true })
@@ -145,6 +151,12 @@ describe.skipIf(npm === undefined)('kernel installer (fake registries)', () => {
     const state = await install({ canonical, mirrors: [honestMirror] })
     expect(state.status, state.log.join('\n')).toBe('installed')
     expect(state.log.join('\n')).toContain(`installed lf-fake-cli@1.0.0 from ${honestMirror}`)
+  }, 120_000)
+
+  it('installs when the install root is reached through a symlink', async () => {
+    const state = await install({ canonical, mirrors: [honestMirror], viaSymlink: true })
+    expect(state.status, state.log.join('\n')).toBe('installed')
+    expect(existsSync(join(state.dir, 'node_modules', 'lf-fake-cli', 'cli.js'))).toBe(true)
   }, 120_000)
 
   it('refuses when the canonical registry is unreachable, unless "trust mirror" is on', async () => {

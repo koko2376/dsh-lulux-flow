@@ -20,7 +20,7 @@
  * used for the lockfile, and the log says so).
  */
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, join } from 'node:path'
 import { redact } from '../util/redact.js'
 import { readManagedPackage, resolveCmdShim } from './binary.js'
@@ -198,9 +198,14 @@ export class KernelInstaller {
     }
     if (version === undefined) throw new Error('no registry offers a compatible version')
 
-    const dir = join(this.options.installRoot, def.id)
-    rmSync(dir, { recursive: true, force: true, maxRetries: 3 })
-    mkdirSync(dir, { recursive: true, mode: 0o700 })
+    const target = join(this.options.installRoot, def.id)
+    rmSync(target, { recursive: true, force: true, maxRetries: 3 })
+    mkdirSync(target, { recursive: true, mode: 0o700 })
+    // Run npm on the real path. When the directory is reached through a
+    // symlink (on macOS the temp dir lives under /var -> /private/var, and a
+    // data dir can be symlinked anywhere), `npm install --package-lock-only`
+    // reports "up to date" and writes a lockfile without any dependencies.
+    const dir = realpathSync(target)
     // npm >= 12 blocks dependency install scripts unless allowed; only this package's scripts run, in step 3.
     writeFileSync(
       join(dir, 'package.json'),
