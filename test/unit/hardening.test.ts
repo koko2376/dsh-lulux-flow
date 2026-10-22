@@ -4,7 +4,7 @@
  * scrubbed --version probes, script-node isolation, and the http/notify
  * executors.
  */
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
@@ -197,6 +197,12 @@ describe('file-access mitigations in the launch flags', () => {
     if (process.platform !== 'win32') expect(deny).toContain('Read(//proc/**)')
     expect(claudeAbsoluteRule('C:\\Users\\u\\.dsh\\')).toBe('//c/Users/u/.dsh/**')
     expect(claudeDenyRules([])).toContain('Edit(~/.dsh/**)')
+    // a protected dir reached through a symlink is denied under its real path too
+    const real = tempDir()
+    const link = `${real}-link`
+    symlinkSync(real, link, process.platform === 'win32' ? 'junction' : 'dir')
+    const linked = claudeDenyRules([link])
+    expect(linked).toEqual(expect.arrayContaining([`Read(${claudeAbsoluteRule(link)})`, `Read(${claudeAbsoluteRule(realpathSync(real))})`]))
     // global mode too
     expect(findKernel('claude-code')!.launch({ mode: 'global', permission: 'edit', home: '/h', gatewayUrl: '', token: '', model: 'm', approvalBridge: false }).args).toContain('--settings')
   })

@@ -8,6 +8,7 @@
  * documented in docs/kernels.md. To add a CLI, implement
  * {@link KernelDefinition} and call `registerKernel()`.
  */
+import { realpathSync } from 'node:fs'
 import { CLAUDE_PERMISSION_TOOL, MCP_SERVER_NAME } from '../gateway/mcp.js'
 import { asArray, asRecord, asString } from '../gateway/canonical.js'
 import type { KernelDefinition, KernelEvent, KernelLaunchContext, KernelParser } from './types.js'
@@ -73,6 +74,14 @@ export const CLAUDE_SETTINGS_FILE = 'lulux-flow-settings.json'
  * Claude Code permission-rule path for an absolute path: `//` marks an
  * absolute path; Windows drives become `//c/...`.
  */
+function realPathOrSelf(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
 export function claudeAbsoluteRule(path: string): string {
   let p = path.replace(/\\/g, '/').replace(/\/+$/, '')
   const drive = /^([A-Za-z]):\//.exec(p)
@@ -89,7 +98,10 @@ export function claudeAbsoluteRule(path: string): string {
  * edit, and unrestricted at full.
  */
 export function claudeDenyRules(protectedPaths: readonly string[]): string[] {
-  const paths = [...new Set([...protectedPaths.filter(Boolean), ...(process.platform === 'win32' ? [] : ['/proc'])])]
+  // Claude Code may see a path by its real location (on macOS /var is a link to
+  // /private/var), so a protected path reached through a symlink is denied under both names.
+  const withReal = protectedPaths.filter(Boolean).flatMap(path => [path, realPathOrSelf(path)])
+  const paths = [...new Set([...withReal, ...(process.platform === 'win32' ? [] : ['/proc'])])]
   const rules: string[] = []
   for (const path of paths) {
     const rule = claudeAbsoluteRule(path)
