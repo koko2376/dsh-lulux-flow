@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs'
-import { dirname, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 /** Ids used in file names: letters, digits, `-` and `_`, 1–64 chars. */
 export const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/
@@ -9,11 +9,17 @@ export function assertSafeId(id: string, what = 'id'): string {
   return id
 }
 
-/** Resolve `child` under `root`, refusing anything that escapes it. */
+/**
+ * Resolve `parts` under `root` with the platform's own path rules (so the
+ * result is native: `D:\data\runs` on Windows), refusing anything that
+ * escapes it: `..` segments, an absolute part, or another drive.
+ */
 export function safeJoin(root: string, ...parts: string[]): string {
   const base = resolve(root)
   const target = resolve(base, ...parts)
-  if (target !== base && !target.startsWith(base + sep)) throw new Error('path escapes the data directory')
+  const rel = relative(base, target)
+  if (rel === '') return target
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('path escapes the data directory')
   return target
 }
 

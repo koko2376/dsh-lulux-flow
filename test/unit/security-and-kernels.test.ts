@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { TokenStore } from '../../src/gateway/tokens.js'
 import { BUILTIN_KERNELS, findKernel, registerKernel } from '../../src/kernels/catalog.js'
@@ -156,7 +156,18 @@ describe('redaction & paths', () => {
   it('refuses unsafe ids and traversal', () => {
     expect(() => assertSafeId('a/b')).toThrow()
     expect(() => safeJoin('/data', '../etc')).toThrow()
-    expect(safeJoin('/data', 'runs', 'a.json')).toBe('/data/runs/a.json')
+    expect(() => safeJoin('/data', 'runs', '..', '..', 'etc')).toThrow()
+    expect(() => safeJoin('/data', resolve('/elsewhere'))).toThrow()
+    // native paths: /data/runs/a.json on POSIX, <drive>:\\data\\runs\\a.json on Windows
+    expect(safeJoin('/data', 'runs', 'a.json')).toBe(join(resolve('/data'), 'runs', 'a.json'))
+    expect(safeJoin('/data', '..data', 'a.json')).toBe(join(resolve('/data'), '..data', 'a.json'))
+    expect(safeJoin('/data')).toBe(resolve('/data'))
+    // a filesystem root as the base (resolve('/') already ends with a separator)
+    expect(safeJoin(resolve('/'), 'a.json')).toBe(join(resolve('/'), 'a.json'))
+    if (process.platform === 'win32') {
+      expect(() => safeJoin('C:\\data', 'D:\\data\\a.json')).toThrow()
+      expect(() => safeJoin('C:\\data', '..\\etc')).toThrow()
+    }
   })
 })
 
