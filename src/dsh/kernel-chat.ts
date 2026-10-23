@@ -17,6 +17,7 @@
 import { join } from 'node:path'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { KernelService } from '../kernels/service.js'
+import { queuedLine, type KernelQueueStatus } from '../kernels/limiter.js'
 import type { KernelDefinition, KernelEvent } from '../kernels/types.js'
 import type { UpstreamTarget } from '../gateway/canonical.js'
 import { readJsonFile, writeJsonAtomic } from '../util/fs.js'
@@ -68,13 +69,46 @@ interface Turn {
   text: string
 }
 
+interface SourceLike {
+  kind?: unknown
+  form?: unknown
+}
+
+/**
+ * Context forms that only describe state or reference material (a clock, a
+ * catalog, workspace instructions, recalled history). They are never a message
+ * addressed to the agent, so the CLI does not receive them as turns.
+ */
+const CONTEXT_ONLY_FORMS = new Set(['snapshot', 'catalog', 'instructions', 'recall'])
+
+/**
+ * Whether a user-role message is something the agent should answer, as opposed
+ * to context a plugin or the runtime injected.
+ *
+ * - no source (a hand-built input) or `kind: 'user'`: typed by the user;
+ * - `form: 'relay'`: a message another agent addressed to this one (for
+ *   example a ds-bot group turn, a request or reply between Bots, a handoff or a
+ *   team kickoff), whatever its producer `kind`;
+ * - `kind: 'schedule'`: a scheduled task firing.
+ *
+ * Context-only forms (`snapshot`, `catalog`, ...) are skipped even when their
+ * kind would match. Any other kind is skipped, as before. Unknown future
+ * shapes therefore degrade to "skipped", never to a crash.
+ */
+export function isConversationMessage(source: unknown): boolean {
+  if (source === undefined || source === null || typeof source !== 'object') return true
+  const { kind, form } = source as SourceLike
+  if (typeof form === 'string' && CONTEXT_ONLY_FORMS.has(form)) return false
+  if (kind === undefined || kind === 'user' || kind === 'schedule') return true
+  return form === 'relay'
+}
+
 export function conversationTurns(options: Pick<GenerateOptions, 'messages'>): Turn[] {
   const turns: Turn[] = []
   for (const message of options.messages) {
-    const m = message as { role: string; content: unknown; source?: { kind?: string } }
+    const m = message as { role: string; content: unknown; source?: unknown }
     if (m.role === 'user') {
-      // Skip runtime/context injections; keep what the user typed.
-      if (m.source !== undefined && m.source.kind !== undefined && m.source.kind !== 'user') continue
+      if (!isConversationMessage(m.source)) continue
       const text = textOf(m.content).trim()
       if (text) turns.push({ role: 'user', text })
     } else if (m.role === 'assistant') {
@@ -85,13 +119,59 @@ export function conversationTurns(options: Pick<GenerateOptions, 'messages'>): T
   return turns
 }
 
-/** Build the prompt for this turn: the new message, plus earlier context when the CLI cannot resume. */
+/** Upper bound for the identity text passed to a CLI as extra system instructions. */
+export const MAX_IDENTITY_CHARS = 12_000
+
+const IDENTITY_HEADING = /^# Your identity[ \t]*$/m
+
+/**
+ * The agent's identity from the request's system prompt, for the CLI.
+ *
+ * Only the `# Your identity` section is taken (ds-bot renders a Bot's name,
+ * role, instructions and team rules there), up to the next top-level heading
+ * and at most {@link MAX_IDENTITY_CHARS}. The rest of DSH's system prompt is
+ * not forwarded: it describes DSH's own tools and runtime, which the CLI does
+ * not have, and the CLI brings its own system prompt. Returns undefined when
+ * the request carries no identity section (an ordinary DSH chat session).
+ */
+export function identityPrompt(options: Pick<GenerateOptions, 'messages'>, kernelName: string): string | undefined {
+  let system = ''
+  for (const message of options.messages) {
+    const m = message as { role: string; content: unknown }
+    if (m.role === 'system') system = textOf(m.content)
+  }
+  const start = IDENTITY_HEADING.exec(system)
+  if (start === null) return undefined
+  const rest = system.slice(start.index + start[0].length)
+  const next = /^# \S/m.exec(rest)
+  let section = `${start[0].trim()}${next === null ? rest : rest.slice(0, next.index)}`.trim()
+  if (section.length > MAX_IDENTITY_CHARS) {
+    const cut = section.lastIndexOf('\n', MAX_IDENTITY_CHARS)
+    section = `${section.slice(0, cut > MAX_IDENTITY_CHARS / 2 ? cut : MAX_IDENTITY_CHARS).trimEnd()}\n…`
+  }
+  return [
+    section,
+    '',
+    `## Running as ${kernelName}`,
+    `You answer through ${kernelName} and have only its own tools. Tools named above that ${kernelName} does not have (such as message_bot, ask_user, show_view, list_bots, update_bot, post_to_group, request_secret, read_own_chat or read_group_chat) are not available: do not call them and do not write them out as text. In a group chat, call on another member by writing @Name with their exact name. Your final text in a turn is your message.`,
+  ].join('\n')
+}
+
+/** Build the prompt for this turn: the new message(s), plus earlier context when the CLI cannot resume. */
 export function buildTurnPrompt(turns: Turn[], binding: SessionBinding | undefined, kernel: KernelDefinition, maxContextChars = 24_000): { prompt: string; resume?: string; userTurns: number } {
   const userTurns = turns.filter(t => t.role === 'user').length
   const last = [...turns].reverse().find(t => t.role === 'user')
   if (last === undefined) return { prompt: '', userTurns }
-  if (kernel.supportsResume && binding?.nativeSessionId !== undefined && binding.deliveredTurns === userTurns - 1) {
-    return { prompt: last.text, resume: binding.nativeSessionId, userTurns }
+  if (kernel.supportsResume && binding?.nativeSessionId !== undefined && binding.deliveredTurns >= 1 && binding.deliveredTurns < userTurns) {
+    // Everything after the last delivered user turn. Several user turns arrive at
+    // once when messages queued while the CLI was busy (a steered or deferred
+    // message); they go together, as long as no reply the CLI never wrote sits
+    // between them.
+    let seen = 0
+    const pending = turns.filter(t => (t.role === 'user' ? ++seen > binding.deliveredTurns : seen > binding.deliveredTurns))
+    if (pending.every(t => t.role === 'user')) {
+      return { prompt: pending.map(t => t.text).join('\n\n'), resume: binding.nativeSessionId, userTurns }
+    }
   }
   const earlier = turns.slice(0, turns.lastIndexOf(last))
   if (earlier.length === 0) return { prompt: last.text, userTurns }
@@ -153,6 +233,7 @@ export async function* kernelChatStream(kernel: KernelDefinition, options: Gener
   const turns = conversationTurns(options)
   const binding = sessionId !== undefined ? deps.sessions.get(sessionId, kernel.id) : undefined
   const { prompt, resume, userTurns } = buildTurnPrompt(turns, binding, kernel)
+  const identity = identityPrompt(options, kernel.name)
   let index = 0
   let open: 'text' | 'reasoning' | undefined
   let textBuffer = ''
@@ -225,7 +306,9 @@ export async function* kernelChatStream(kernel: KernelDefinition, options: Gener
         ...(sessionId !== undefined ? { sessionId } : {}),
         ...(turnResume !== undefined ? { resumeSessionId: turnResume } : {}),
         timeoutMs: deps.timeoutMs,
+        ...(identity !== undefined ? { appendSystemPrompt: identity } : {}),
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
+        onQueued: (status: KernelQueueStatus) => write('reasoning', `${queuedLine(kernel.name, status)}\n`),
         onEvent: (event: KernelEvent) => {
           if (event.type === 'text') {
             if (event.final === true && textBuffer) write('text', '\n\n')

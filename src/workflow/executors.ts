@@ -2,6 +2,7 @@
  * Step executors for agent, kernel, script, http and notify nodes. The engine
  * passes configs with templates already rendered.
  */
+import { queuedLine } from '../kernels/limiter.js'
 import type { StepContext, StepExecutor, StepResult } from './engine.js'
 import { runScript } from './script.js'
 import { outboundRequest, type OutboundPolicy } from './ssrf.js'
@@ -119,6 +120,7 @@ export function createExecutors(deps: ExecutorDeps): Record<'agent' | 'kernel' |
       runId: `${ctx.run.id}.${ctx.node.id}.${Date.now().toString(36)}`,
       timeoutMs: Number(config.timeoutMs ?? 0) > 0 ? Number(config.timeoutMs) : deps.kernelTimeoutMs,
       signal: ctx.signal,
+      onQueued: status => ctx.trace(queuedLine(def.name, status)),
       onEvent: event => {
         if (event.type === 'tool') ctx.trace(`▸ ${event.name} ${event.detail}`)
         else if (event.type === 'error' && !event.fatal) ctx.trace(`! ${event.message}`)

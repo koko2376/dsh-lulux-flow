@@ -33,6 +33,11 @@ export interface KernelLaunchContext {
    * this is defence in depth, not an OS sandbox.
    */
   protectedPaths?: readonly string[]
+  /**
+   * Extra system instructions to append to the CLI's own system prompt, set
+   * only for kernels whose `systemPromptVia` is an option of their own.
+   */
+  appendSystemPrompt?: string
 }
 
 export interface KernelLaunch {
@@ -84,6 +89,13 @@ export interface KernelDefinition {
    * resumed run; without them `--resume` finds nothing.
    */
   sessionStateDirs?: readonly string[]
+  /**
+   * How extra system instructions (an agent identity) reach the CLI:
+   * - `flag`: its own option, on every run (the CLI rebuilds its system prompt per run);
+   * - `flag-new-session`: its own option, only when a native session starts (it is kept in the session);
+   * - `prompt` (default): on top of the prompt of a new native session, never on resume.
+   */
+  systemPromptVia?: 'flag' | 'flag-new-session' | 'prompt'
   /** Whether permission prompts can be bridged to DSH approvals. */
   supportsApprovalBridge: boolean
   /** Permission levels the CLI can enforce. Default: all four. Lower levels are used instead of missing ones. */

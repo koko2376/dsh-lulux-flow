@@ -84,6 +84,8 @@ function claudeParser(): KernelParser {
 }
 
 export const CLAUDE_SETTINGS_FILE = 'lulux-flow-settings.json'
+/** Extra system instructions for Claude Code, read through `--append-system-prompt-file` (no command-line length limits). */
+export const CLAUDE_SYSTEM_PROMPT_FILE = 'lulux-flow-system-prompt.md'
 
 /**
  * Claude Code permission-rule path for an absolute path: `//` marks an
@@ -162,6 +164,10 @@ function claudeLaunch(ctx: KernelLaunchContext): ReturnType<KernelDefinition['la
     )
     args.push('--mcp-config', `{home}/${MCP_CONFIG_FILE}`, '--permission-prompt-tool', CLAUDE_PERMISSION_TOOL)
   }
+  if (ctx.appendSystemPrompt !== undefined) {
+    files[CLAUDE_SYSTEM_PROMPT_FILE] = ctx.appendSystemPrompt
+    args.push('--append-system-prompt-file', `{home}/${CLAUDE_SYSTEM_PROMPT_FILE}`)
+  }
   if (ctx.resumeSessionId !== undefined) args.push('--resume', ctx.resumeSessionId)
   return { args, env, files, promptVia: 'stdin' }
 }
@@ -222,6 +228,8 @@ function codexLaunch(ctx: KernelLaunchContext): ReturnType<KernelDefinition['lau
       '-c', `model=${toml(ctx.model)}`,
     )
   }
+  // Developer instructions are recorded in the new session; a resumed one already has them.
+  if (ctx.appendSystemPrompt !== undefined && ctx.resumeSessionId === undefined) args.push('-c', `developer_instructions=${toml(ctx.appendSystemPrompt)}`)
   if (ctx.resumeSessionId !== undefined) args.push('resume', ctx.resumeSessionId)
   args.push('-')
   return { args, env, promptVia: 'stdin' }
@@ -350,13 +358,15 @@ export const BUILTIN_KERNELS: KernelDefinition[] = [
     vendor: 'Anthropic',
     npmPackage: '@anthropic-ai/claude-code',
     bin: 'claude',
-    minVersion: '>=2.0.0',
+    minVersion: '>=2.0.34',
     protocols: ['anthropic', 'mcp'],
     avatar: 'claude-code.png',
     color: '#d97757',
     loginHint: 'Run `claude` once and complete /login, or set ANTHROPIC_API_KEY, then restart DSH.',
     supportsResume: true,
     sessionStateDirs: ['projects'],
+    // Claude Code rebuilds its system prompt on every launch, so the option goes on every run.
+    systemPromptVia: 'flag',
     supportsApprovalBridge: true,
     launch: claudeLaunch,
     parser: claudeParser,
@@ -376,6 +386,7 @@ export const BUILTIN_KERNELS: KernelDefinition[] = [
     loginHint: 'Run `codex login`, or set OPENAI_API_KEY, then restart DSH.',
     supportsResume: true,
     sessionStateDirs: ['sessions'],
+    systemPromptVia: 'flag-new-session',
     supportsApprovalBridge: false,
     launch: codexLaunch,
     parser: codexParser,

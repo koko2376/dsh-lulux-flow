@@ -17,6 +17,8 @@ const out = obj => process.stdout.write(`${JSON.stringify(obj)}\n`)
 const args = process.argv.slice(2)
 const resume = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : undefined
 const mcpIndex = args.indexOf('--mcp-config')
+const systemFile = args.includes('--append-system-prompt-file') ? args[args.indexOf('--append-system-prompt-file') + 1] : undefined
+const appendedSystem = systemFile !== undefined ? readFileSync(systemFile, 'utf8') : undefined
 
 const sessionId = resume ?? 'native-session-1'
 // Like the real CLI, transcripts live under the config dir, per working directory,
@@ -38,6 +40,8 @@ const record = message => {
 out({ type: 'system', subtype: 'init', session_id: sessionId })
 
 if (prompt.includes('SLEEP')) await new Promise(r => setTimeout(r, 30_000))
+const pause = /PAUSE(\d+)/.exec(prompt)
+if (pause) await new Promise(r => setTimeout(r, Number(pause[1])))
 if (prompt.includes('CRASH')) {
   process.stderr.write('fatal: something broke\n')
   process.exit(3)
@@ -61,7 +65,7 @@ if (prompt.includes('APPROVAL') && mcpIndex >= 0) {
 const response = await fetch(`${base}/v1/messages`, {
   method: 'POST',
   headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
-  body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL, max_tokens: 256, stream: true, messages: [...history, { role: 'user', content: prompt }] }),
+  body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL, max_tokens: 256, stream: true, ...(appendedSystem !== undefined ? { system: appendedSystem } : {}), messages: [...history, { role: 'user', content: prompt }] }),
 })
 if (!response.ok) {
   out({ type: 'result', subtype: 'error', is_error: true, result: `gateway ${response.status}: ${await response.text()}` })

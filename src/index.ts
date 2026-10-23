@@ -29,7 +29,7 @@ import { KernelInstaller } from './kernels/installer.js'
 import { DEFAULT_REGISTRIES, RegistrySelector } from './kernels/registry-probe.js'
 import { KernelRunner } from './kernels/runner.js'
 import { SessionStateStore } from './kernels/session-state.js'
-import { KernelService } from './kernels/service.js'
+import { DEFAULT_KERNEL_LIMITS, KernelService } from './kernels/service.js'
 import type { LuluxFlowRuntime } from './runtime.js'
 import { SettingsStore } from './settings.js'
 import { createTools } from './tools.js'
@@ -71,6 +71,8 @@ export interface Config {
   defaultRunDeadlineMs: number
   maxActiveRuns: number
   kernelEnvPassthrough: string[]
+  kernelMaxConcurrent: number
+  kernelMaxConcurrentPerCli: number
 }
 
 export const Config: z<Config> = z.object({
@@ -97,6 +99,26 @@ export const Config: z<Config> = z.object({
   defaultRunDeadlineMs: z.number().min(0).default(6 * 3600_000).description('Wall-clock limit for a workflow run that sets no deadline of its own (0 = none).'),
   maxActiveRuns: z.number().min(1).max(256).default(16).description('Maximum workflow runs executing at once; further starts are refused.'),
   kernelEnvPassthrough: z.array(z.string()).default([]).description('Extra environment variable names passed to scoped CLIs (the scoped environment is an allowlist). Example: SSH_AUTH_SOCK for git over SSH. Anything listed here is visible to the CLI.'),
+  kernelMaxConcurrent: z
+    .number()
+    .min(1)
+    .max(64)
+    .default(DEFAULT_KERNEL_LIMITS.global)
+    .description('Maximum CLI runs at once across all CLIs (chat sessions, ds-bot members, workflows, subagents). Further runs wait in a queue.')
+    .i18n({
+      'zh-CN': '所有 CLI 同时运行的最大数量（聊天会话、ds-bot 成员、工作流和子代理合计）。超出的运行会排队等待。',
+      en: 'Maximum CLI runs at once across all CLIs (chat sessions, ds-bot members, workflows, subagents). Further runs wait in a queue.',
+    }),
+  kernelMaxConcurrentPerCli: z
+    .number()
+    .min(1)
+    .max(64)
+    .default(DEFAULT_KERNEL_LIMITS.perKernel)
+    .description('Maximum runs at once of any one CLI (for example Claude Code). Further runs of that CLI wait in a queue.')
+    .i18n({
+      'zh-CN': '单个 CLI（例如 Claude Code）同时运行的最大数量。超出的运行会排队等待。',
+      en: 'Maximum runs at once of any one CLI (for example Claude Code). Further runs of that CLI wait in a queue.',
+    }),
 }) as z<Config>
 
 function dshHome(): string {
@@ -193,7 +215,10 @@ export function apply(ctx: Context, config: Config): void {
     envPassthrough: () => config.kernelEnvPassthrough,
     protectedPaths: () => [dshHome(), dataDir],
   })
-  const kernels = new KernelService(runner, installer, settings, { provider: providerName, chatRoute })
+  const kernels = new KernelService(runner, installer, settings, { provider: providerName, chatRoute }, () => ({
+    global: config.kernelMaxConcurrent ?? DEFAULT_KERNEL_LIMITS.global,
+    perKernel: config.kernelMaxConcurrentPerCli ?? DEFAULT_KERNEL_LIMITS.perKernel,
+  }))
 
   const complete = async (system: string, user: string, signal: AbortSignal): Promise<string> => {
     const request: CanonicalRequest = { model: '', system, turns: [{ role: 'user', text: user }], tools: [], stream: true }

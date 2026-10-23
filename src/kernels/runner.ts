@@ -20,6 +20,7 @@ import { nodeSpawnEnv, resolveBinary, spawnArgs, type ResolvedBinary } from './b
 import { globalBaseEnv, scopedBaseEnv } from './env.js'
 import { killTree } from './kill.js'
 import type { SessionStateStore } from './session-state.js'
+import type { KernelQueueStatus } from './limiter.js'
 import type { KernelDefinition, KernelEvent, KernelMode, KernelPermission } from './types.js'
 
 export interface KernelRunRequest {
@@ -36,6 +37,28 @@ export interface KernelRunRequest {
   timeoutMs: number
   signal?: AbortSignal
   onEvent?: (event: KernelEvent) => void
+  /**
+   * Extra system instructions (an agent identity). Delivered the way the
+   * kernel declares in `systemPromptVia`; never repeated in the prompt of a
+   * resumed native session.
+   */
+  appendSystemPrompt?: string
+  /** Called once when the run has to wait for a free slot (see KernelService.run). */
+  onQueued?: (status: KernelQueueStatus) => void
+}
+
+/** Where a run's extra system instructions go: the CLI's own option, the top of the prompt, or nowhere. */
+export function systemPromptPlacement(kernel: KernelDefinition, text: string | undefined, resuming: boolean): 'flag' | 'prompt' | undefined {
+  if (text === undefined || text.trim() === '') return undefined
+  const via = kernel.systemPromptVia ?? 'prompt'
+  if (via === 'flag') return 'flag'
+  if (resuming) return undefined
+  return via === 'flag-new-session' ? 'flag' : 'prompt'
+}
+
+/** A new native session's prompt with the extra system instructions on top (CLIs without an option for them). */
+export function withSystemPrompt(text: string, prompt: string): string {
+  return `Instructions for this conversation (treat them as your system prompt):\n\n${text.trim()}\n\n---\n\n${prompt}`
 }
 
 export interface KernelRunResult {
@@ -132,6 +155,8 @@ export class KernelRunner {
       if (resume !== undefined && keepsState && !this.deps.sessionState!.restore(kernel, resume, home)) {
         return { ...base, status: 'error', durationMs: Date.now() - started, diagnostic: `${kernel.name} has no saved session ${resume} to resume` }
       }
+      const placement = systemPromptPlacement(kernel, request.appendSystemPrompt, resume !== undefined)
+      const prompt = placement === 'prompt' ? withSystemPrompt(request.appendSystemPrompt!, request.prompt) : request.prompt
       const launch = kernel.launch({
         mode: request.mode,
         permission: request.permission,
@@ -142,6 +167,7 @@ export class KernelRunner {
         ...(resume !== undefined ? { resumeSessionId: resume } : {}),
         approvalBridge: scoped && this.deps.approvalBridge && kernel.supportsApprovalBridge,
         protectedPaths: this.deps.protectedPaths?.() ?? [],
+        ...(placement === 'flag' ? { appendSystemPrompt: request.appendSystemPrompt!.trim() } : {}),
       })
       for (const [rel, content] of Object.entries(launch.files ?? {})) {
         let file: string
@@ -156,13 +182,13 @@ export class KernelRunner {
       let promptFile: string | undefined
       if (launch.promptVia === 'file') {
         promptFile = join(home, 'prompt.txt')
-        writeFileSync(promptFile, request.prompt, { mode: 0o600 })
+        writeFileSync(promptFile, prompt, { mode: 0o600 })
       }
       const args = launch.args.map(arg => arg.replaceAll('{home}', home).replaceAll('{promptFile}', promptFile ?? ''))
-      if (launch.promptVia === 'arg') args.push(request.prompt)
+      if (launch.promptVia === 'arg') args.push(prompt)
       const env = { ...(scoped ? scopedBaseEnv(process.env, this.deps.envPassthrough?.() ?? []) : globalBaseEnv()), ...launch.env }
 
-      const result = await this.spawnAndParse(binary, args, env, request, launch.promptVia === 'stdin' ? request.prompt : undefined, tools)
+      const result = await this.spawnAndParse(binary, args, env, request, launch.promptVia === 'stdin' ? prompt : undefined, tools)
       if (keepsState && result.nativeSessionId !== undefined) {
         try {
           this.deps.sessionState!.save(kernel, result.nativeSessionId, home)

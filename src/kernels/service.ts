@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto'
 import type { UpstreamTarget } from '../gateway/canonical.js'
 import type { KernelDefinition, KernelPermission } from './types.js'
 import { supportedPermissions } from './policy.js'
+import { AbortedWhileQueued, KernelLimiter, type KernelLimits } from './limiter.js'
 
 export interface KernelTestResult {
   ok: boolean
@@ -52,15 +53,22 @@ export interface KernelInfo {
   chatRoute: string
 }
 
+/** Defaults for the CLI concurrency caps (plugin Config `kernelMaxConcurrent` / `kernelMaxConcurrentPerCli`). */
+export const DEFAULT_KERNEL_LIMITS: KernelLimits = { global: 6, perKernel: 3 }
+
 export class KernelService {
   private readonly versions = new Map<string, { file: string; version: string | undefined }>()
+  readonly limiter: KernelLimiter
 
   constructor(
     private readonly runner: KernelRunner,
     private readonly installer: KernelInstaller,
     private readonly settings: SettingsStore,
     private readonly names: { provider: (id: string) => string; chatRoute: (id: string) => string },
-  ) {}
+    limits: () => KernelLimits = () => DEFAULT_KERNEL_LIMITS,
+  ) {
+    this.limiter = new KernelLimiter(limits)
+  }
 
   find(id: string): KernelDefinition | undefined {
     return findKernel(id)
@@ -120,8 +128,23 @@ export class KernelService {
     return this.installer.uninstall(this.require(id))
   }
 
-  run(request: KernelRunRequest): Promise<KernelRunResult> {
-    return this.runner.run(request)
+  /**
+   * One CLI run, within the concurrency caps: when they are full the run waits
+   * in a FIFO queue (reported once through `request.onQueued`) and an abort
+   * while waiting settles it as `aborted` without starting the CLI. The run's
+   * timeout starts when the CLI starts.
+   */
+  async run(request: KernelRunRequest): Promise<KernelRunResult> {
+    const queuedAt = Date.now()
+    try {
+      return await this.limiter.run(request.kernel.id, () => this.runner.run(request), {
+        ...(request.signal !== undefined ? { signal: request.signal } : {}),
+        ...(request.onQueued !== undefined ? { onQueued: request.onQueued } : {}),
+      })
+    } catch (error: unknown) {
+      if (!(error instanceof AbortedWhileQueued)) throw error
+      return { status: 'aborted', text: '', usage: { inputTokens: 0, outputTokens: 0, requests: 0 }, exitCode: null, durationMs: Date.now() - queuedAt, diagnostic: 'cancelled while queued', tools: [] }
+    }
   }
 
   /**

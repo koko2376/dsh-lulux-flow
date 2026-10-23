@@ -15,6 +15,23 @@ import type { KernelService } from '../kernels/service.js'
 import type { KernelDefinition } from '../kernels/types.js'
 import { CHAT_MODEL_ID, kernelChatStream, type KernelChatDeps } from './kernel-chat.js'
 
+const TEXT_ONLY: NonNullable<LlmModelInfo['inputModalities']> = ['text']
+
+/**
+ * Whether a request is a one-shot model call rather than a turn of the agent
+ * loop. By the dsh-llm contract (GenerateOptions): `purpose` marks auxiliary
+ * calls (compaction, session titles); `system` is set only by hand-built
+ * one-shot callers, loop-built requests carry the system prompt as a leading
+ * system message and leave it undefined; and a loop-built request holds
+ * durable Session messages, each with an `id` and a `source`, while a
+ * hand-built one may hold only request inputs, which have neither.
+ */
+export function isOneShotRequest(options: Pick<GenerateOptions, 'purpose' | 'system' | 'messages'>): boolean {
+  if (options.purpose !== undefined || options.system !== undefined) return true
+  const messages = options.messages as ReadonlyArray<{ id?: unknown; source?: unknown }>
+  return messages.length > 0 && messages.every(message => message.id === undefined && message.source === undefined)
+}
+
 export const providerName = (kernelId: string): string => `${BRAND.providerPrefix}-${kernelId}`
 export const chatRoute = (kernelId: string): string => `${BRAND.providerPrefix}-${kernelId}`
 
@@ -108,14 +125,16 @@ export class LuluxFlowKernelAdapter extends LlmAdapter {
         provider,
         id: CHAT_MODEL_ID,
         name: kernel.name,
-        description: `${kernel.vendor} ${kernel.name} CLI as the session agent, running on your DSH model through the ${BRAND.displayName} gateway.`,
+        description: `${kernel.vendor} ${kernel.name} CLI as the session agent, running on your DSH model through the ${BRAND.displayName} gateway. Uses its own tools, not DSH tools.`,
+        // The CLI receives text only; declaring it lets callers (e.g. ds-bot) turn images into text first.
+        inputModalities: TEXT_ONLY,
       },
     ])
   }
 
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     const kernel = this.kernelFor(provider)
-    return Promise.resolve({ provider, id: model, name: kernel?.name ?? model, context: { contextWindow: 200_000 } })
+    return Promise.resolve({ provider, id: model, name: kernel?.name ?? model, context: { contextWindow: 200_000 }, inputModalities: TEXT_ONLY })
   }
 
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -124,8 +143,9 @@ export class LuluxFlowKernelAdapter extends LlmAdapter {
       yield { type: 'finish', reason: { kind: 'error', failure: { message: `unknown kernel route ${options.provider}`, code: 'KERNEL_UNKNOWN' } } } as StreamChunk
       return
     }
-    // Auxiliary calls (titles, compaction) must not spawn a CLI: answer them through the upstream model.
-    if (options.purpose !== undefined) {
+    // One-shot calls (titles, compaction, a plugin's summary) must not spawn a CLI or
+    // touch the session's native resume state: answer them through the upstream model.
+    if (isOneShotRequest(options)) {
       yield* this.deps.auxiliary(options)
       return
     }
