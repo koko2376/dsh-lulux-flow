@@ -5,6 +5,7 @@ import { KernelGateway } from '../../src/gateway/server.js'
 import { TokenStore } from '../../src/gateway/tokens.js'
 import { findKernel } from '../../src/kernels/catalog.js'
 import { KernelRunner } from '../../src/kernels/runner.js'
+import { SessionStateStore } from '../../src/kernels/session-state.js'
 import { FakeUpstream, TARGET, tempDir, textReply, parseSse } from '../helpers.js'
 
 const FAKE = join(import.meta.dirname, '..', 'fixtures', 'fake-claude.mjs')
@@ -130,6 +131,7 @@ describe('kernel runner with a fake Claude Code CLI', () => {
     approvalBridge: true,
     resolve: () => ({ command: process.execPath, prefixArgs: [FAKE], source: 'settings', file: FAKE }),
     graceMs: 200,
+    sessionState: new SessionStateStore(join(root, 'kernel-sessions')),
   })
   const kernel = findKernel('claude-code')!
   const base = { kernel, cwd: root, mode: 'scoped' as const, permission: 'ask' as const, target: TARGET, timeoutMs: 15_000 }
@@ -178,9 +180,51 @@ describe('kernel runner with a fake Claude Code CLI', () => {
     expect(result.status).toBe('aborted')
   })
 
-  it('passes --resume for native session continuity', async () => {
-    const result = await runner.run({ ...base, prompt: 'again', runId: 'run-f', resumeSessionId: 'native-xyz' })
-    expect(result.nativeSessionId).toBe('native-xyz')
+  it('resumes a native session in a later run although each run gets a fresh home', async () => {
+    const cwd = tempDir('lulux-flow-cwd-')
+    upstream.script = () => [{ type: 'reasoning', text: 'greeting' }, ...textReply('hi there')]
+    const first = await runner.run({ ...base, cwd, prompt: 'first turn', runId: 'run-f1', sessionId: 's-resume' })
+    expect(first.status).toBe('completed')
+    upstream.script = () => textReply('second answer')
+    const second = await runner.run({ ...base, cwd, prompt: 'second turn', runId: 'run-f2', sessionId: 's-resume', resumeSessionId: first.nativeSessionId! })
+    expect(second).toMatchObject({ status: 'completed', text: 'second answer', nativeSessionId: first.nativeSessionId })
+    // the earlier turn reached the model again, reasoning included
+    const turns = upstream.requests.at(-1)!.request.turns
+    expect(turns.map(t => t.role)).toEqual(['user', 'assistant', 'user'])
+    expect(turns[1]).toMatchObject({ role: 'assistant', text: 'hi there', reasoning: 'greeting' })
+  })
+
+  it('reports a session it has no transcript for without starting the CLI', async () => {
+    const result = await runner.run({ ...base, prompt: 'again', runId: 'run-f3', resumeSessionId: 'native-unknown' })
+    expect(result.status).toBe('error')
+    expect(result.diagnostic).toBe('Claude Code has no saved session native-unknown to resume')
+    expect(result.usage.requests).toBe(0)
+    expect(tokens.size).toBe(0)
+  })
+
+  it('without saved session state a resumed run fails the way the real CLI does', async () => {
+    const stateless = new KernelRunner({ tokens, gatewayUrl: () => gateway.baseUrl, runsRoot: join(root, 'tmp'), installRoot: join(root, 'kernels'), approvalBridge: false, resolve: () => ({ command: process.execPath, prefixArgs: [FAKE], source: 'settings', file: FAKE }) })
+    const cwd = tempDir('lulux-flow-cwd-')
+    const first = await stateless.run({ ...base, cwd, prompt: 'first', runId: 'run-f4' })
+    expect(first.status).toBe('completed')
+    const second = await stateless.run({ ...base, cwd, prompt: 'second', runId: 'run-f5', resumeSessionId: first.nativeSessionId! })
+    expect(second.status).toBe('error')
+    expect(second.diagnostic).toContain('No conversation found with session ID')
+  })
+
+  it('explains an empty answer when the model replied with reasoning only', async () => {
+    upstream.script = () => [{ type: 'reasoning', text: 'thinking about it' }, { type: 'usage', usage: { inputTokens: 5, outputTokens: 2 } }, { type: 'finish', reason: 'stop' }]
+    const result = await runner.run({ ...base, prompt: 'hello', runId: 'run-f6' })
+    expect(result.status).toBe('error')
+    expect(result.diagnostic).toBe(
+      `Claude Code finished without an answer: ${TARGET.model} returned only its reasoning and no reply text. Ask again, or choose a lower reasoning effort for this model in DSH.`,
+    )
+  })
+
+  it('reports cache reads in run usage', async () => {
+    upstream.script = () => textReply('cached', { inputTokens: 4, outputTokens: 1, cacheReadTokens: 900 })
+    const result = await runner.run({ ...base, prompt: 'hello', runId: 'run-f7' })
+    expect(result.usage).toMatchObject({ inputTokens: 4, cacheReadTokens: 900 })
   })
 
   it('reports a missing binary clearly', async () => {

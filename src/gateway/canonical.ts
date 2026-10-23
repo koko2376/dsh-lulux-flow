@@ -22,7 +22,17 @@ export interface CanonicalToolCall {
 
 export type CanonicalTurn =
   | { role: 'user'; text: string; images?: CanonicalImage[] }
-  | { role: 'assistant'; text: string; toolCalls?: CanonicalToolCall[] }
+  | {
+      role: 'assistant'
+      text: string
+      toolCalls?: CanonicalToolCall[]
+      /**
+       * The model's earlier reasoning for this turn, as the client sent it back.
+       * Thinking-mode models (DeepSeek V4) expect it replayed with the turn,
+       * notably across a tool call.
+       */
+      reasoning?: string
+    }
   | { role: 'tool'; toolCallId: string; text: string; isError?: boolean }
 
 export interface CanonicalTool {
@@ -50,6 +60,7 @@ export interface CanonicalUsage {
   inputTokens: number
   outputTokens: number
   cacheReadTokens?: number
+  cacheWriteTokens?: number
   reasoningTokens?: number
 }
 

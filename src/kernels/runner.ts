@@ -19,6 +19,7 @@ import { safeJoin } from '../util/fs.js'
 import { nodeSpawnEnv, resolveBinary, spawnArgs, type ResolvedBinary } from './binary.js'
 import { globalBaseEnv, scopedBaseEnv } from './env.js'
 import { killTree } from './kill.js'
+import type { SessionStateStore } from './session-state.js'
 import type { KernelDefinition, KernelEvent, KernelMode, KernelPermission } from './types.js'
 
 export interface KernelRunRequest {
@@ -42,7 +43,7 @@ export interface KernelRunResult {
   text: string
   /** Native CLI session id, when the CLI reported one. */
   nativeSessionId?: string
-  usage: { inputTokens: number; outputTokens: number; requests: number }
+  usage: { inputTokens: number; outputTokens: number; requests: number; cacheReadTokens?: number; cacheWriteTokens?: number }
   exitCode: number | null
   durationMs: number
   diagnostic?: string
@@ -68,6 +69,8 @@ export interface KernelRunnerDeps {
   protectedPaths?: () => readonly string[]
   /** Cap on CLI stdout kept per run (bytes). Default 16 MB. */
   maxOutputBytes?: number
+  /** Keeps native session transcripts between scoped runs so `--resume` finds them. */
+  sessionState?: SessionStateStore
 }
 
 const LOGIN_PATTERN = /\b(log ?in|sign ?in|unauthori[sz]ed|authenticat|api[ _-]?key|credential|\/login|oauth)/i
@@ -123,6 +126,12 @@ export class KernelRunner {
       : undefined
 
     try {
+      const resume = request.resumeSessionId !== undefined && kernel.supportsResume ? request.resumeSessionId : undefined
+      // Scoped homes are fresh per run: put the saved transcript back before resuming it.
+      const keepsState = scoped && this.deps.sessionState !== undefined && (kernel.sessionStateDirs?.length ?? 0) > 0
+      if (resume !== undefined && keepsState && !this.deps.sessionState!.restore(kernel, resume, home)) {
+        return { ...base, status: 'error', durationMs: Date.now() - started, diagnostic: `${kernel.name} has no saved session ${resume} to resume` }
+      }
       const launch = kernel.launch({
         mode: request.mode,
         permission: request.permission,
@@ -130,7 +139,7 @@ export class KernelRunner {
         gatewayUrl: scoped ? this.deps.gatewayUrl() : '',
         token: issued?.token ?? '',
         model: request.target.model,
-        ...(request.resumeSessionId !== undefined && kernel.supportsResume ? { resumeSessionId: request.resumeSessionId } : {}),
+        ...(resume !== undefined ? { resumeSessionId: resume } : {}),
         approvalBridge: scoped && this.deps.approvalBridge && kernel.supportsApprovalBridge,
         protectedPaths: this.deps.protectedPaths?.() ?? [],
       })
@@ -154,12 +163,25 @@ export class KernelRunner {
       const env = { ...(scoped ? scopedBaseEnv(process.env, this.deps.envPassthrough?.() ?? []) : globalBaseEnv()), ...launch.env }
 
       const result = await this.spawnAndParse(binary, args, env, request, launch.promptVia === 'stdin' ? request.prompt : undefined, tools)
+      if (keepsState && result.nativeSessionId !== undefined) {
+        try {
+          this.deps.sessionState!.save(kernel, result.nativeSessionId, home)
+        } catch {
+          /* a failed save only costs the next turn its native resume (it falls back to replayed context) */
+        }
+      }
       if (issued !== undefined) {
         const stats = issued.record.stats
         result.usage = {
           inputTokens: stats.inputTokens || result.usage.inputTokens,
           outputTokens: stats.outputTokens || result.usage.outputTokens,
           requests: stats.requests,
+          ...(stats.cacheReadTokens > 0 ? { cacheReadTokens: stats.cacheReadTokens } : {}),
+          ...(stats.cacheWriteTokens > 0 ? { cacheWriteTokens: stats.cacheWriteTokens } : {}),
+        }
+        if (result.status === 'error' && result.text === '' && stats.reasoningOnlyReplies > 0 && result.diagnostic?.startsWith(`${kernel.name} finished without an answer`)) {
+          const times = stats.reasoningOnlyReplies > 1 ? ` (${stats.reasoningOnlyReplies} replies in a row)` : ''
+          result.diagnostic = `${kernel.name} finished without an answer: ${request.target.model} returned only its reasoning and no reply text${times}. Ask again, or choose a lower reasoning effort for this model in DSH.`
         }
         if (result.status === 'error' && stats.lastError !== null && result.diagnostic !== undefined && !result.diagnostic.includes(stats.lastError)) {
           result.diagnostic = `${result.diagnostic} (upstream: ${redact(stats.lastError)})`
@@ -192,6 +214,7 @@ export class KernelRunner {
       let nativeSessionId: string | undefined
       let fatal: string | undefined
       let lastError: string | undefined
+      let reasoningSeen = false
       const usage = { inputTokens: 0, outputTokens: 0, requests: 0 }
       let settled = false
       let timedOut = false
@@ -228,6 +251,9 @@ export class KernelRunner {
           case 'text':
             if (event.final === true) text += (text && !text.endsWith('\n') ? '\n\n' : '') + event.text
             else text += event.text
+            break
+          case 'reasoning':
+            reasoningSeen = true
             break
           case 'tool':
             tools.push({ name: event.name, detail: event.detail })
@@ -306,7 +332,10 @@ export class KernelRunner {
           const detail = redact((lastError ?? stderr.toString()).replace(/\s+/g, ' ').trim().slice(-400))
           return resolve({ ...base, status: 'error', diagnostic: `${request.kernel.name} exited with code ${code ?? 'unknown'}${detail ? `: ${detail}` : ''}` })
         }
-        if (!output) return resolve({ ...base, status: 'error', diagnostic: `${request.kernel.name} finished without an answer${lastError ? `: ${redact(lastError)}` : ''}` })
+        if (!output) {
+          const why = lastError !== undefined ? `: ${redact(lastError)}` : reasoningSeen ? ': the model returned only its reasoning and no reply text' : ''
+          return resolve({ ...base, status: 'error', diagnostic: `${request.kernel.name} finished without an answer${why}` })
+        }
         resolve({ ...base, status: 'completed' })
       }
       child.on('error', error => finish(null, error))

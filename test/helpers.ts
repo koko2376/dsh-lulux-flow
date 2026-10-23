@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { CanonicalEvent, CanonicalRequest, Upstream, UpstreamTarget } from '../src/gateway/canonical.js'
+import type { CanonicalEvent, CanonicalRequest, CanonicalUsage, Upstream, UpstreamTarget } from '../src/gateway/canonical.js'
 
 export function tempDir(prefix = 'lulux-flow-test-'): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -23,7 +23,7 @@ export class FakeUpstream implements Upstream {
   }
 }
 
-export function textReply(text: string, usage = { inputTokens: 12, outputTokens: 3 }): CanonicalEvent[] {
+export function textReply(text: string, usage: CanonicalUsage = { inputTokens: 12, outputTokens: 3 }): CanonicalEvent[] {
   return [{ type: 'text', text: text.slice(0, 2) }, { type: 'text', text: text.slice(2) }, { type: 'usage', usage }, { type: 'finish', reason: 'stop' }]
 }
 

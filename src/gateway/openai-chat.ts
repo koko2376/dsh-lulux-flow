@@ -38,7 +38,13 @@ export function chatToCanonical(body: unknown): CanonicalRequest {
         const fn = asRecord(call.function)
         calls.push({ id: asString(call.id) || randomId('call_'), name: asString(fn.name), arguments: asString(fn.arguments) || '{}' })
       }
-      turns.push({ role: 'assistant', text: flattenContent(message.content), ...(calls.length > 0 ? { toolCalls: calls } : {}) })
+      const reasoning = asString(message.reasoning_content)
+      turns.push({
+        role: 'assistant',
+        text: flattenContent(message.content),
+        ...(calls.length > 0 ? { toolCalls: calls } : {}),
+        ...(reasoning ? { reasoning } : {}),
+      })
       continue
     }
     if (role === 'tool') {

@@ -68,7 +68,11 @@ the wire protocols that CLI needs, and is reusable for the length of that run
 compares digests in constant time. The plaintext is given to the CLI in its
 environment and, for Claude Code's approval bridge, in a 0600 file inside the
 per-run home, which is deleted after the run (left-over run homes are removed
-at startup). Tokens expire, are revoked when the run ends, and revoking a
+at startup). For CLIs that resume sessions (Claude Code, Codex) only their
+session transcript directories (`projects/`, `sessions/`) are copied out of
+the home before it is deleted, into `kernel-sessions/` in the plugin data
+directory, so the next turn can resume; they hold conversation content, never
+tokens or settings, and are pruned after 30 days. Tokens expire, are revoked when the run ends, and revoking a
 token aborts its in-flight upstream requests. At most 8 concurrent upstream
 calls per token are allowed, and request bodies must arrive within 60 s.
 Request bodies and tokens are never logged.

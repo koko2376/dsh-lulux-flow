@@ -334,8 +334,17 @@ export class KernelGateway {
   }
 
   private async *track(events: AsyncIterable<CanonicalEvent>, record: TokenRecord): AsyncIterable<CanonicalEvent> {
+    let reasoning = false
+    let answered = false
     for await (const event of events) {
       if (event.type === 'usage') this.options.tokens.recordUsage(record, event.usage)
+      else if (event.type === 'reasoning' && event.text) reasoning = true
+      else if ((event.type === 'text' && event.text.trim()) || event.type === 'tool-call-start') answered = true
+      else if (event.type === 'finish' && (event.reason === 'stop' || event.reason === 'max_tokens') && reasoning && !answered) {
+        // Thinking-mode models occasionally stop after reasoning alone; the client sees an empty reply.
+        record.stats.reasoningOnlyReplies += 1
+        this.options.logger.warn(`gateway: ${record.target.model} replied with reasoning only (kernel ${record.kernelId})`)
+      }
       yield event
     }
   }

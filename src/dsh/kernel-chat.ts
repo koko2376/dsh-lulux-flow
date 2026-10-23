@@ -297,7 +297,15 @@ export async function* kernelChatStream(kernel: KernelDefinition, options: Gener
       updatedAt: new Date().toISOString(),
     })
   }
-  yield { type: 'usage', usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens } } as StreamChunk
+  yield {
+    type: 'usage',
+    usage: {
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      ...(result.usage.cacheReadTokens !== undefined ? { cacheReadTokens: result.usage.cacheReadTokens } : {}),
+      ...(result.usage.cacheWriteTokens !== undefined ? { cacheWriteTokens: result.usage.cacheWriteTokens } : {}),
+    },
+  } as StreamChunk
   if (result.status === 'completed') yield { type: 'finish', reason: { kind: 'stop' } } as StreamChunk
   else if (result.status === 'aborted') yield { type: 'finish', reason: { kind: 'aborted', failure: { message: 'cancelled', code: 'ABORTED' } } } as StreamChunk
   else yield { type: 'finish', reason: { kind: 'error', failure: { message: result.diagnostic ?? `${kernel.name} ${result.status}`, code: 'KERNEL_FAILED' } } } as StreamChunk

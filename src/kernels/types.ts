@@ -77,6 +77,13 @@ export interface KernelDefinition {
   loginHint: string
   /** Whether the CLI can resume a native session across turns (main-session mode). */
   supportsResume: boolean
+  /**
+   * Directories, relative to the isolated run home, where the CLI keeps its
+   * native session transcripts. The home is removed after every run, so the
+   * runner saves these per native session id and restores them before a
+   * resumed run; without them `--resume` finds nothing.
+   */
+  sessionStateDirs?: readonly string[]
   /** Whether permission prompts can be bridged to DSH approvals. */
   supportsApprovalBridge: boolean
   /** Permission levels the CLI can enforce. Default: all four. Lower levels are used instead of missing ones. */

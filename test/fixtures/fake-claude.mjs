@@ -2,7 +2,8 @@
 // Test double for the Claude Code CLI in headless stream-json mode.
 // It talks to the LULUX Flow gateway exactly like the real CLI would
 // (ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN) and prints stream-json lines.
-import { readFileSync, existsSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 if (process.argv.includes('--version')) {
   console.log('2.1.0 (Claude Code)')
@@ -17,7 +18,24 @@ const args = process.argv.slice(2)
 const resume = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : undefined
 const mcpIndex = args.indexOf('--mcp-config')
 
-out({ type: 'system', subtype: 'init', session_id: resume ?? 'native-session-1' })
+const sessionId = resume ?? 'native-session-1'
+// Like the real CLI, transcripts live under the config dir, per working directory,
+// and `--resume` of an id with no transcript there fails before any model call.
+const configDir = process.env.CLAUDE_CONFIG_DIR
+const transcript = configDir ? join(configDir, 'projects', process.cwd().replace(/[^A-Za-z0-9]/g, '-'), `${sessionId}.jsonl`) : undefined
+if (resume !== undefined && transcript !== undefined && !existsSync(transcript)) {
+  const message = `No conversation found with session ID: ${resume}`
+  out({ type: 'result', subtype: 'error_during_execution', is_error: true, errors: [message], session_id: resume })
+  process.exit(1)
+}
+const history = transcript !== undefined && existsSync(transcript) ? readFileSync(transcript, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)) : []
+const record = message => {
+  if (transcript === undefined) return
+  mkdirSync(join(transcript, '..'), { recursive: true })
+  appendFileSync(transcript, `${JSON.stringify(message)}\n`)
+}
+
+out({ type: 'system', subtype: 'init', session_id: sessionId })
 
 if (prompt.includes('SLEEP')) await new Promise(r => setTimeout(r, 30_000))
 if (prompt.includes('CRASH')) {
@@ -43,7 +61,7 @@ if (prompt.includes('APPROVAL') && mcpIndex >= 0) {
 const response = await fetch(`${base}/v1/messages`, {
   method: 'POST',
   headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
-  body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL, max_tokens: 256, stream: true, messages: [{ role: 'user', content: prompt }] }),
+  body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL, max_tokens: 256, stream: true, messages: [...history, { role: 'user', content: prompt }] }),
 })
 if (!response.ok) {
   out({ type: 'result', subtype: 'error', is_error: true, result: `gateway ${response.status}: ${await response.text()}` })
@@ -51,12 +69,17 @@ if (!response.ok) {
 }
 const body = await response.text()
 let text = ''
+let thinking = ''
 for (const block of body.split('\n\n')) {
   const data = /^data: (.+)$/m.exec(block)?.[1]
   if (!data) continue
   const event = JSON.parse(data)
   out({ type: 'stream_event', event })
   if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') text += event.delta.text
+  if (event.type === 'content_block_delta' && event.delta.type === 'thinking_delta') thinking += event.delta.thinking
 }
-out({ type: 'assistant', message: { content: [{ type: 'text', text }] } })
-out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: resume ?? 'native-session-1', usage: { input_tokens: 1, output_tokens: 1 } })
+const content = [...(thinking ? [{ type: 'thinking', thinking, signature: '' }] : []), ...(text ? [{ type: 'text', text }] : [])]
+out({ type: 'assistant', message: { content } })
+record({ role: 'user', content: prompt })
+record({ role: 'assistant', content })
+out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: sessionId, usage: { input_tokens: 1, output_tokens: 1 } })

@@ -41,6 +41,33 @@ All notable changes to this project are documented here. The format follows
   dependencies found": the DSH packages, which come from the DSH runtime, are
   optional peers. A GitHub install no longer resolves the optional subagent
   peer to a newer prerelease than the other DSH packages.
+- **Claude Code / Codex as a chat session's main agent: follow-up turns
+  failed** ("Claude Code reported an error", "No conversation found with
+  session ID"). Each scoped run gets a fresh config directory that is deleted
+  afterwards, and the CLI keeps its session transcript there, so `--resume`
+  never found the previous turn. The transcript directories are now kept per
+  native session in the plugin data directory (pruned after 30 days or 200
+  sessions per CLI) and restored into the next run's home; follow-up turns
+  resume natively.
+- A thinking-mode model's earlier reasoning is sent back with its turn instead
+  of being dropped, and responses the gateway streamed are replayed to DSH
+  exactly as DSH produced them, with the adapter's replay metadata (native
+  thinking signatures), so tool loops and resumed turns keep the reasoning
+  DeepSeek V4 expects. Claude Code's mid-conversation `system` entries are
+  passed as context instead of reading as user text.
+- A reply with reasoning but no text (Claude Code then ends with an empty
+  answer) is now reported as such ("… returned only its reasoning and no
+  reply text") instead of the bare "finished without an answer". Text an
+  adapter delivers only in its closing block is no longer lost.
+- Cache reads and writes reach Claude Code (`cache_read_input_tokens`,
+  `cache_creation_input_tokens`) and DSH's usage footer.
+- Failed Claude Code runs name the result's subtype and errors (plus the
+  CLI's stderr when nothing more specific is known) instead of "Claude Code
+  reported an error". When a resumed session still cannot be continued, the
+  turn is retried once in a new session with the conversation replayed as
+  context.
+- Run parameter rows in the workflow inspector no longer overflow the panel
+  on a narrow inspector.
 
 ### Changed
 

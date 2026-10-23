@@ -48,7 +48,7 @@ describe('anthropic', () => {
     expect(req.tools.map(t => t.name)).toEqual(['Read'])
     expect(req.turns).toEqual([
       { role: 'user', text: 'hi' },
-      { role: 'assistant', text: 'calling', toolCalls: [{ id: 'tu1', name: 'Read', arguments: '{"p":"f"}' }] },
+      { role: 'assistant', text: 'calling', toolCalls: [{ id: 'tu1', name: 'Read', arguments: '{"p":"f"}' }], reasoning: 'x' },
       { role: 'tool', toolCallId: 'tu1', text: 'data', isError: true },
       { role: 'user', text: 'next' },
     ])

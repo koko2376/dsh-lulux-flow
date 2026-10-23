@@ -35,6 +35,9 @@ export interface TokenStats {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
+  cacheWriteTokens: number
+  /** Upstream replies that finished normally with reasoning but no text and no tool call. */
+  reasoningOnlyReplies: number
   lastError: string | null
 }
 
@@ -78,7 +81,7 @@ export class TokenStore {
       digest,
       createdAt,
       expiresAt: createdAt + ttlMs,
-      stats: { requests: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, lastError: null },
+      stats: { requests: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningOnlyReplies: 0, lastError: null },
       inflight: new Set(),
     }
     const key = digest.toString('hex')
@@ -123,6 +126,7 @@ export class TokenStore {
     record.stats.inputTokens += usage.inputTokens
     record.stats.outputTokens += usage.outputTokens
     record.stats.cacheReadTokens += usage.cacheReadTokens ?? 0
+    record.stats.cacheWriteTokens += usage.cacheWriteTokens ?? 0
   }
 
   get size(): number {

@@ -183,3 +183,13 @@ describe('claudeResultError', () => {
     expect(claudeResultError({ type: 'result', is_error: true })).toBe('Claude Code reported an error')
   })
 })
+
+describe('kernel chat usage', () => {
+  const kernel = findKernel('claude-code')!
+  it('passes cache reads and writes on to DSH usage', async () => {
+    const chunks = await drain(
+      kernelChatStream(kernel, options('hi'), deps(async () => ({ ...completed('ok'), usage: { inputTokens: 3, outputTokens: 2, requests: 1, cacheReadTokens: 900, cacheWriteTokens: 40 } }))),
+    )
+    expect(chunks.find(c => c.type === 'usage')).toEqual({ type: 'usage', usage: { inputTokens: 3, outputTokens: 2, cacheReadTokens: 900, cacheWriteTokens: 40 } })
+  })
+})

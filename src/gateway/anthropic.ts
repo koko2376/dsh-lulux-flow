@@ -1,7 +1,10 @@
 /**
  * Anthropic Messages API ⇄ canonical model. Used by Claude Code
  * (`ANTHROPIC_BASE_URL`). Text, tool_use and tool_result blocks are
- * translated; thinking blocks are dropped on input; inline images are kept.
+ * translated; assistant thinking text is kept as the turn's reasoning (its
+ * signature is not: it belongs to another provider); inline images are kept.
+ * `system`-role entries inside `messages` (Claude Code sends its environment
+ * and date context that way) stay in place as user-side context.
  */
 import {
   asArray,
@@ -32,6 +35,13 @@ export function anthropicToCanonical(body: unknown): CanonicalRequest {
     const message = asRecord(raw)
     const role = message.role === 'assistant' ? 'assistant' : 'user'
     const content = message.content
+    if (message.role === 'system') {
+      // Mid-conversation system context. Wrapped so the model reads it as
+      // context, not as something the user said.
+      const text = flattenContent(content).trim()
+      if (text) turns.push({ role: 'user', text: `<system-reminder>\n${text}\n</system-reminder>` })
+      continue
+    }
     if (typeof content === 'string') {
       turns.push(role === 'assistant' ? { role, text: content } : { role, text: content })
       continue
@@ -39,9 +49,11 @@ export function anthropicToCanonical(body: unknown): CanonicalRequest {
     const blocks = asArray(content).map(asRecord)
     if (role === 'assistant') {
       const text: string[] = []
+      const reasoning: string[] = []
       const calls: CanonicalToolCall[] = []
       for (const block of blocks) {
         if (block.type === 'text') text.push(asString(block.text))
+        else if (block.type === 'thinking' && asString(block.thinking)) reasoning.push(asString(block.thinking))
         else if (block.type === 'tool_use' || block.type === 'server_tool_use') {
           calls.push({
             id: asString(block.id) || randomId('toolu_'),
@@ -50,7 +62,12 @@ export function anthropicToCanonical(body: unknown): CanonicalRequest {
           })
         }
       }
-      turns.push({ role: 'assistant', text: text.join(''), ...(calls.length > 0 ? { toolCalls: calls } : {}) })
+      turns.push({
+        role: 'assistant',
+        text: text.join(''),
+        ...(calls.length > 0 ? { toolCalls: calls } : {}),
+        ...(reasoning.length > 0 ? { reasoning: reasoning.join('\n\n') } : {}),
+      })
       continue
     }
     // tool_result blocks become tool turns (they must directly follow the
@@ -117,6 +134,7 @@ export class AnthropicStreamEncoder {
   private outputTokens = 0
   private inputTokens: number
   private cacheRead = 0
+  private cacheWrite = 0
 
   constructor(
     private readonly model: string,
@@ -137,7 +155,7 @@ export class AnthropicStreamEncoder {
           content: [],
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: this.inputTokens, output_tokens: 0 },
+          usage: { input_tokens: this.inputTokens, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 },
         },
       }) + sse('ping', { type: 'ping' })
     )
@@ -168,7 +186,7 @@ export class AnthropicStreamEncoder {
         let out = ''
         if (this.open?.kind !== 'thinking') {
           out += this.close()
-          out += sse('content_block_start', { type: 'content_block_start', index: this.index, content_block: { type: 'thinking', thinking: '' } })
+          out += sse('content_block_start', { type: 'content_block_start', index: this.index, content_block: { type: 'thinking', thinking: '', signature: '' } })
           this.open = { kind: 'thinking' }
         }
         return out + sse('content_block_delta', { type: 'content_block_delta', index: this.index, delta: { type: 'thinking_delta', thinking: event.text } })
@@ -193,6 +211,7 @@ export class AnthropicStreamEncoder {
         this.inputTokens = event.usage.inputTokens
         this.outputTokens = event.usage.outputTokens
         this.cacheRead = event.usage.cacheReadTokens ?? 0
+        this.cacheWrite = event.usage.cacheWriteTokens ?? 0
         return ''
       case 'finish':
         if (event.reason === 'error' || event.reason === 'aborted') return this.close() + this.error(event.error ?? event.reason)
@@ -208,7 +227,12 @@ export class AnthropicStreamEncoder {
       sse('message_delta', {
         type: 'message_delta',
         delta: { stop_reason: stopReason(reason, this.sawToolUse), stop_sequence: null },
-        usage: { input_tokens: this.inputTokens, output_tokens: this.outputTokens, cache_read_input_tokens: this.cacheRead },
+        usage: {
+          input_tokens: this.inputTokens,
+          output_tokens: this.outputTokens,
+          cache_creation_input_tokens: this.cacheWrite,
+          cache_read_input_tokens: this.cacheRead,
+        },
       }) +
       sse('message_stop', { type: 'message_stop' })
     )
@@ -243,6 +267,7 @@ export function anthropicMessageFrom(model: string, estimatedInputTokens: number
     usage: {
       input_tokens: collected.usage?.inputTokens ?? estimatedInputTokens,
       output_tokens: collected.usage?.outputTokens ?? 0,
+      cache_creation_input_tokens: collected.usage?.cacheWriteTokens ?? 0,
       cache_read_input_tokens: collected.usage?.cacheReadTokens ?? 0,
     },
   }

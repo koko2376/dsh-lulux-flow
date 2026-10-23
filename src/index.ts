@@ -28,6 +28,7 @@ import { listKernels } from './kernels/catalog.js'
 import { KernelInstaller } from './kernels/installer.js'
 import { DEFAULT_REGISTRIES, RegistrySelector } from './kernels/registry-probe.js'
 import { KernelRunner } from './kernels/runner.js'
+import { SessionStateStore } from './kernels/session-state.js'
 import { KernelService } from './kernels/service.js'
 import type { LuluxFlowRuntime } from './runtime.js'
 import { SettingsStore } from './settings.js'
@@ -186,6 +187,7 @@ export function apply(ctx: Context, config: Config): void {
     gatewayUrl: () => gateway.baseUrl,
     runsRoot: join(dataDir, 'tmp'),
     installRoot,
+    sessionState: new SessionStateStore(join(dataDir, 'kernel-sessions')),
     binaryOverride: id => settings.kernel(id).binaryPath || undefined,
     approvalBridge: true,
     envPassthrough: () => config.kernelEnvPassthrough,
