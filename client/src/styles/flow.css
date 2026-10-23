@@ -935,8 +935,14 @@
 
 .lxf-workflows,
 .lxf-runsview {
+  /* Panel widths: defaults per breakpoint; a width the user dragged to arrives as --lxf-left-w / --lxf-right-w. */
+  --lxf-left-def: 248px;
+  --lxf-right-def: 380px;
+  --lxf-left: var(--lxf-left-w, var(--lxf-left-def));
+  --lxf-right: var(--lxf-right-w, var(--lxf-right-def));
+  position: relative;
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr) 380px;
+  grid-template-columns: var(--lxf-left) minmax(0, 1fr) var(--lxf-right);
   gap: 12px;
   height: 100%;
   min-height: 0;
@@ -944,7 +950,7 @@
 
 .lxf-workflows:not(:has(> .lxf-panel)),
 .lxf-runsview:not(:has(> .lxf-panel)) {
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: var(--lxf-left) minmax(0, 1fr);
 }
 
 .lxf-sidebar {
@@ -960,6 +966,12 @@
   justify-content: space-between;
   gap: 8px;
   padding: 14px 12px 8px 16px;
+}
+
+.lxf-sidebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .lxf-sidebar__title {
@@ -1851,8 +1863,17 @@
   overflow: hidden;
 }
 
+.lxf-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 12px 8px 4px 12px;
+}
+
 .lxf-panel__tabs {
-  margin: 12px 12px 4px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
   justify-self: stretch;
   display: grid;
 }
@@ -3098,16 +3119,8 @@ button.lxf-issue:hover {
 @container lxf (max-width: 1280px) {
   .lxf-workflows,
   .lxf-runsview {
-    grid-template-columns: 204px minmax(0, 1fr) 300px;
-  }
-
-  .lxf-workflows:not(:has(> .lxf-panel)),
-  .lxf-runsview:not(:has(> .lxf-panel)) {
-    grid-template-columns: 204px minmax(0, 1fr);
-  }
-
-  .lxf-workflows.is-list-hidden {
-    grid-template-columns: minmax(0, 1fr) 300px;
+    --lxf-left-def: 204px;
+    --lxf-right-def: 300px;
   }
 
   .lxf-kernels__layout {
@@ -3127,6 +3140,11 @@ button.lxf-issue:hover {
     grid-template-columns: minmax(0, 1fr);
     grid-auto-rows: minmax(180px, auto) minmax(420px, 1fr) auto;
     overflow: auto;
+  }
+
+  /* Stacked layout: panels take the full width, so there is nothing to drag. */
+  .lxf-resizer {
+    display: none;
   }
 
   .lxf-page__head {
@@ -3162,11 +3180,108 @@ button.lxf-issue:hover {
 }
 
 .lxf-workflows.is-list-hidden {
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(0, 1fr) var(--lxf-right);
 }
 
-.lxf-sidebar[hidden] {
+.lxf-workflows.is-panel-hidden {
+  grid-template-columns: var(--lxf-left) minmax(0, 1fr);
+}
+
+.lxf-workflows.is-list-hidden.is-panel-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lxf-sidebar[hidden],
+.lxf-panel[hidden] {
   display: none;
+}
+
+/* ── panel resize & collapse ────────────────────────────── */
+
+/* Sits in the 12px gutter next to its panel; the hairline only shows on hover, focus or drag. */
+.lxf-resizer {
+  position: absolute;
+  z-index: 7;
+  top: 18px;
+  bottom: 18px;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+  border-radius: 999px;
+  outline: none;
+}
+
+.lxf-resizer--left {
+  left: var(--lxf-left);
+}
+
+.lxf-resizer--right {
+  right: var(--lxf-right);
+}
+
+.lxf-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 999px;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--lxf-accent) 70%, transparent) 18%, color-mix(in srgb, var(--lxf-accent) 70%, transparent) 82%, transparent);
+  opacity: 0;
+  transform: scaleY(0.6);
+  transition: opacity 160ms, transform 300ms var(--lxf-spring, ease);
+}
+
+.lxf-resizer:hover::after,
+.lxf-workflows.is-resizing .lxf-resizer::after {
+  opacity: 0.55;
+  transform: scaleY(1);
+}
+
+.lxf-resizer:focus-visible::after,
+.lxf-resizer:active::after {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.lxf-workflows.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.lxf-workflows.is-resizing > * {
+  pointer-events: none;
+}
+
+.lxf-workflows.is-resizing > .lxf-resizer {
+  pointer-events: auto;
+}
+
+.lxf-collapse {
+  color: var(--lxf-label-3);
+}
+
+.lxf-collapse:hover:not(:disabled) {
+  color: var(--lxf-label);
+}
+
+.lxf-toolbar__panel {
+  position: relative;
+  display: inline-flex;
+}
+
+.lxf-toolbar__hint {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--lxf-accent);
+  box-shadow: 0 0 0 1.5px var(--lxf-glass-strong, #fff);
+  pointer-events: none;
 }
 
 .lxf-canvas .react-flow__node:hover .lxf-handle__tag,

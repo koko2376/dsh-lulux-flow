@@ -39,6 +39,9 @@ export const IconBeaker = make(<><path d="M8 3.5v5L4.2 15a1 1 0 0 0 .9 1.5h9.8a1
 export const IconSettings = make(<><circle cx="10" cy="10" r="2.5" /><path d="M10 2.8v2M10 15.2v2M2.8 10h2M15.2 10h2M4.9 4.9l1.4 1.4M13.7 13.7l1.4 1.4M4.9 15.1l1.4-1.4M13.7 6.3l1.4-1.4" /></>)
 
 export const IconSidebar = make(<><rect x="3" y="4" width="14" height="12" rx="2.5" /><path d="M8 4v12" /></>)
+export const IconSidebarRight = make(<><rect x="3" y="4" width="14" height="12" rx="2.5" /><path d="M12 4v12" /></>)
+export const IconChevronLeft = make(<path d="M12 5.5L7.5 10l4.5 4.5" />)
+export const IconChevronRight = make(<path d="M8 5.5l4.5 4.5L8 14.5" />)
 
 export const NodeIcons = {
   input: make(<><path d="M3.5 10h9M9.5 6.5l3.5 3.5-3.5 3.5" /><path d="M13 4h2.5a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H13" /></>),

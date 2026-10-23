@@ -60,6 +60,8 @@ export interface CanvasProps {
   onMoveNode?: (id: string, position: { x: number; y: number }) => void
   onConnect?: (source: string, target: string, route?: EdgeRoute) => void
   onSelect?: (selection: Selection) => void
+  /** A node was double-clicked (opens it in the inspector). */
+  onOpenNode?: (id: string) => void
   onDelete?: (selection: { nodes: string[]; edges: string[] }) => void
   onDropNode?: (type: NodeType, position: { x: number; y: number }) => void
   onReady?: (api: { centre: () => { x: number; y: number } }) => void
@@ -246,6 +248,7 @@ export function Canvas(props: CanvasProps): ReactElement {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onPaneClick={() => props.onSelect?.(null)}
+        onNodeDoubleClick={(_, node) => props.onOpenNode?.(node.id)}
         onInit={instance => {
           flow.current = instance
           props.onReady?.({

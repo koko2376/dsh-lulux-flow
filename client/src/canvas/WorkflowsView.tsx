@@ -1,6 +1,6 @@
 /** Workflows view: list, floating toolbar, palette, canvas and inspector/run panel. */
 import { ReactFlowProvider } from '@xyflow/react'
-import { useMemo, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import type { NodeType, ReviewInfo } from '../api/types.ts'
 import type { Translate } from '../i18n/translate.ts'
 import { isDirty, needsReview, ACTIVE_RUN, type FlowActions, type FlowState } from '../store/flow.ts'
@@ -10,11 +10,13 @@ import { RunHistory } from '../runs/RunHistory.tsx'
 import { RunInspector } from '../runs/RunInspector.tsx'
 import { Badge, Button, Empty, IconButton, Popover, Segmented, Spinner, cx } from '../ui/glass.tsx'
 import { BRAND_AVATAR } from '../ui/avatars.ts'
-import { IconCheck, IconChevronDown, IconClock, IconShield, IconDownload, IconHistory, IconLayout, IconPlay, IconPlus, IconSave, IconSearch, IconSparkles, IconTrash, IconSidebar, IconUpload, IconWarning } from '../ui/icons.tsx'
+import { IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconClock, IconShield, IconDownload, IconHistory, IconLayout, IconPlay, IconPlus, IconSave, IconSearch, IconSparkles, IconTrash, IconSidebar, IconSidebarRight, IconUpload, IconWarning } from '../ui/icons.tsx'
 import { Canvas, issueText } from './Canvas.tsx'
 import { EdgeInspector } from './EdgeInspector.tsx'
 import { GenerateDialog, ImportDialog, RunDialog, TriggersDialog } from './dialogs.tsx'
 import { Inspector } from './Inspector.tsx'
+import { usePanelLayout, type PanelSide } from './layout.ts'
+import { PanelResizer } from './PanelResizer.tsx'
 import { Palette } from './Palette.tsx'
 import { WorkflowSettings } from './WorkflowSettings.tsx'
 
@@ -42,10 +44,21 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
   const [moreOpen, setMoreOpen] = useState(false)
   const moreBtn = useRef<HTMLButtonElement | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [listOpen, setListOpen] = useState(true)
+  const root = useRef<HTMLDivElement | null>(null)
+  const sidebarEl = useRef<HTMLElement | null>(null)
+  const panelEl = useRef<HTMLElement | null>(null)
+  const panelOf = useCallback((side: PanelSide) => (side === 'left' ? sidebarEl.current : panelEl.current), [])
+  const panels = usePanelLayout(root, panelOf)
+  const [resizing, setResizing] = useState(false)
+  // Something changed in the inspector while it was collapsed.
+  const [panelHint, setPanelHint] = useState(false)
   const issuesBtn = useRef<HTMLButtonElement | null>(null)
   const centre = useRef<() => { x: number; y: number }>(() => ({ x: 200, y: 200 }))
   const wf = editor.workflow
+  const { leftOpen, rightOpen } = panels.layout
+  // Without an open workflow the list is the only way in, so it stays visible.
+  const listHidden = !leftOpen && wf !== null
+  const panelHidden = !rightOpen
   const scriptsAllowed = meta?.scriptsAllowed ?? false
 
   const issues = useMemo(() => (wf ? mergeIssues(editor.issues, localLint(wf, { scriptsAllowed })) : []), [wf, editor.issues, scriptsAllowed])
@@ -58,15 +71,48 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
   const selectedNode = wf && editor.selection?.kind === 'node' ? wf.nodes.find(n => n.id === editor.selection!.id) : undefined
   const selectedEdge = wf && editor.selection?.kind === 'edge' ? wf.edges.find(e => e.id === editor.selection!.id) : undefined
 
+  const togglePanel = (): void => {
+    if (!rightOpen) setPanelHint(false)
+    panels.toggle('right')
+  }
+  const openPanel = (): void => {
+    setPanelHint(false)
+    panels.setOpen('right', true)
+  }
+  /** Shows a tab: opens the panel when asked for explicitly, otherwise only marks the toggle. */
+  const showTab = (next: PanelTab, open = false): void => {
+    setTab(next)
+    if (rightOpen) return
+    if (open) openPanel()
+    else setPanelHint(true)
+  }
+  const layoutStyle = {
+    ...(panels.widths.left !== null && { '--lxf-left-w': `${panels.widths.left}px` }),
+    ...(panels.widths.right !== null && { '--lxf-right-w': `${panels.widths.right}px` }),
+  } as CSSProperties
+  const resizer = (side: PanelSide) => (
+    <PanelResizer
+      side={side}
+      label={t(side === 'left' ? 'layout.resizeList' : 'layout.resizePanel')}
+      title={t('layout.resize')}
+      value={panels.widths[side] ?? panels.widthOf(side)}
+      bounds={() => panels.boundsOf(side)}
+      current={() => panels.widthOf(side)}
+      onPreview={width => root.current?.style.setProperty(side === 'left' ? '--lxf-left-w' : '--lxf-right-w', `${width}px`)}
+      onCommit={width => panels.setWidth(side, width)}
+      onDragChange={setResizing}
+    />
+  )
+
   const canRun = errors === 0 && !unreviewed
   const runTitle = unreviewed ? t('review.approveFirst') : errors > 0 ? t('toolbar.fixFirst') : undefined
-  const startRun = (): void => ((wf?.inputs?.length ?? 0) > 0 ? setDialog('run') : void actions.run({}).then(() => setTab('run')))
+  const startRun = (): void => ((wf?.inputs?.length ?? 0) > 0 ? setDialog('run') : void actions.run({}).then(() => showTab('run')))
 
   const create = (): void => void actions.newWorkflow(t('workflows.untitled'), { input: t('node.type.input'), output: t('node.type.output') })
 
   const addNode = (type: NodeType, position?: { x: number; y: number }): void => {
     actions.addNode(type, position ?? centre.current(), t(`node.type.${type}` as never))
-    setTab('inspect')
+    showTab('inspect')
   }
 
   const download = async (): Promise<void> => {
@@ -81,11 +127,14 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
   }
 
   return (
-    <div className={cx('lxf-workflows', !listOpen && wf && 'is-list-hidden')}>
-      <aside className="lxf-glass lxf-sidebar" aria-label={t('workflows.list')} hidden={!listOpen && wf !== null}>
+    <div ref={root} className={cx('lxf-workflows', listHidden && 'is-list-hidden', wf && panelHidden && 'is-panel-hidden', resizing && 'is-resizing')} style={layoutStyle}>
+      <aside ref={sidebarEl} id="lxf-workflow-list" className="lxf-glass lxf-sidebar" aria-label={t('workflows.list')} hidden={listHidden}>
         <div className="lxf-sidebar__head">
           <h2 className="lxf-sidebar__title">{t('workflows.title')}</h2>
-          <IconButton label={t('workflows.new')} icon={<IconPlus />} variant="glass" onClick={create} />
+          <span className="lxf-sidebar__actions">
+            <IconButton label={t('workflows.new')} icon={<IconPlus />} variant="glass" onClick={create} />
+            {wf && <IconButton className="lxf-collapse" label={t('toolbar.hideList')} icon={<IconChevronLeft size={14} />} aria-controls="lxf-workflow-list" aria-expanded onClick={() => panels.setOpen('left', false)} />}
+          </span>
         </div>
         <label className="lxf-search">
           <IconSearch size={14} />
@@ -141,6 +190,8 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
         </div>
       </aside>
 
+      {!listHidden && resizer('left')}
+
       <section className="lxf-stage" aria-label={t('canvas.region')}>
         {editor.loading && <div className="lxf-center lxf-stage__loading"><Spinner label={t('common.loading')} /></div>}
         {!wf && !editor.loading && (
@@ -175,7 +226,7 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
         {wf && (
           <ReactFlowProvider>
             <div className="lxf-toolbar" role="toolbar" aria-label={t('toolbar.aria')}>
-              <IconButton label={listOpen ? t('toolbar.hideList') : t('toolbar.showList')} icon={<IconSidebar />} aria-pressed={!listOpen} onClick={() => setListOpen(o => !o)} />
+              <IconButton label={leftOpen ? t('toolbar.hideList') : t('toolbar.showList')} icon={<IconSidebar />} aria-controls="lxf-workflow-list" aria-expanded={leftOpen} onClick={() => panels.toggle('left')} />
               <input className="lxf-toolbar__name" size={Math.min(Math.max(wf.name.length, 6), 28)} aria-label={t('workflow.name')} maxLength={120} value={wf.name} onChange={e => actions.updateWorkflow(w => ({ ...w, name: e.target.value }))} />
               {dirty && <span className="lxf-toolbar__dirty" title={t('toolbar.unsaved')} aria-label={t('toolbar.unsaved')} />}
               <span className="lxf-toolbar__sep" aria-hidden="true" />
@@ -209,6 +260,17 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
               <Button size="sm" variant="primary" icon={<IconPlay />} disabled={!canRun} title={runTitle ?? t('toolbar.run.hint')} onClick={startRun}>
                 {t('toolbar.run')}
               </Button>
+              <span className="lxf-toolbar__sep" aria-hidden="true" />
+              <span className="lxf-toolbar__panel">
+                <IconButton
+                  label={rightOpen ? t('panel.collapse') : panelHint ? t('panel.expandHint') : t('panel.expand')}
+                  icon={<IconSidebarRight />}
+                  aria-controls="lxf-inspector-panel"
+                  aria-expanded={rightOpen}
+                  onClick={togglePanel}
+                />
+                {panelHint && !rightOpen && <span className="lxf-toolbar__hint" aria-hidden="true" />}
+              </span>
             </div>
             <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchor={moreBtn} label={t('toolbar.more')} align="end" width={290}>
               <ul className="lxf-menu" role="menu" aria-label={t('toolbar.more')}>
@@ -216,7 +278,7 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
                   [
                     { key: 'layout', icon: <IconLayout />, run: actions.layout },
                     { key: 'triggers', icon: <IconClock />, run: () => setDialog('triggers') },
-                    { key: 'history', icon: <IconHistory />, run: () => setTab('history') },
+                    { key: 'history', icon: <IconHistory />, run: () => showTab('history', true) },
                     { key: 'export', icon: <IconDownload />, run: () => void download() },
                   ] as const
                 ).map(item => (
@@ -255,7 +317,7 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
                         onClick={() => {
                           if (issue.nodeId) actions.select({ kind: 'node', id: issue.nodeId })
                           else if (issue.edgeId) actions.select({ kind: 'edge', id: issue.edgeId })
-                          setTab('inspect')
+                          showTab('inspect')
                           setIssuesOpen(false)
                         }}
                       >
@@ -288,8 +350,16 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
                 if (showRun) actions.focusRunNode(sel?.kind === 'node' ? sel.id : null)
                 else {
                   actions.select(sel)
-                  if (sel) setTab('inspect')
+                  if (sel) showTab('inspect')
                 }
+              }}
+              onOpenNode={id => {
+                if (showRun) actions.focusRunNode(id)
+                else {
+                  actions.select({ kind: 'node', id })
+                  setTab('inspect')
+                }
+                openPanel()
               }}
               onDelete={({ nodes, edges }) =>
                 actions.updateWorkflow(w => ({ ...w, nodes: w.nodes.filter(n => !nodes.includes(n.id)), edges: w.edges.filter(e => !edges.includes(e.id) && !nodes.includes(e.source) && !nodes.includes(e.target)) }))
@@ -304,19 +374,24 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
         )}
       </section>
 
+      {wf && !panelHidden && resizer('right')}
+
       {wf && (
-        <aside className="lxf-glass lxf-panel" aria-label={t('panel.aria')}>
-          <Segmented<PanelTab>
-            label={t('panel.aria')}
-            value={tab}
-            onChange={setTab}
-            className="lxf-panel__tabs"
-            options={[
-              { value: 'inspect', label: t('panel.inspect') },
-              { value: 'run', label: activeRun && ACTIVE_RUN.includes(activeRun.status) ? t('panel.runLive') : t('panel.run') },
-              { value: 'history', label: t('panel.history') },
-            ]}
-          />
+        <aside ref={panelEl} id="lxf-inspector-panel" className="lxf-glass lxf-panel" aria-label={t('panel.aria')} hidden={panelHidden}>
+          <div className="lxf-panel__head">
+            <Segmented<PanelTab>
+              label={t('panel.aria')}
+              value={tab}
+              onChange={setTab}
+              className="lxf-panel__tabs"
+              options={[
+                { value: 'inspect', label: t('panel.inspect') },
+                { value: 'run', label: activeRun && ACTIVE_RUN.includes(activeRun.status) ? t('panel.runLive') : t('panel.run') },
+                { value: 'history', label: t('panel.history') },
+              ]}
+            />
+            <IconButton className="lxf-collapse" label={t('panel.collapse')} icon={<IconChevronRight size={14} />} aria-controls="lxf-inspector-panel" aria-expanded onClick={() => panels.setOpen('right', false)} />
+          </div>
           <div className="lxf-panel__body">
             {tab === 'inspect' &&
               (selectedNode ? (
@@ -360,7 +435,7 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
                 t={t}
                 locale={locale}
                 onOpen={id => {
-                  void actions.openRun(id).then(() => setTab('run'))
+                  void actions.openRun(id).then(() => showTab('run'))
                 }}
               />
             )}
@@ -370,7 +445,7 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
 
       <GenerateDialog open={dialog === 'generate'} onClose={() => setDialog(null)} t={t} onGenerate={actions.generate} />
       <ImportDialog open={dialog === 'import'} onClose={() => setDialog(null)} t={t} onImport={actions.importJson} />
-      {wf && <RunDialog open={dialog === 'run'} onClose={() => setDialog(null)} t={t} workflow={wf} onRun={inputs => void actions.run(inputs).then(() => setTab('run'))} />}
+      {wf && <RunDialog open={dialog === 'run'} onClose={() => setDialog(null)} t={t} workflow={wf} onRun={inputs => void actions.run(inputs).then(() => showTab('run'))} />}
       {wf && (
         <TriggersDialog
           open={dialog === 'triggers'}
@@ -383,7 +458,7 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
           onRotate={actions.rotateWebhook}
           onRevoke={actions.deleteWebhook}
           onPreview={actions.cronPreview}
-          onRunNow={() => setDialog((wf.inputs?.length ?? 0) > 0 ? 'run' : (void actions.run({}).then(() => setTab('run')), null))}
+          onRunNow={() => setDialog((wf.inputs?.length ?? 0) > 0 ? 'run' : (void actions.run({}).then(() => showTab('run')), null))}
         />
       )}
     </div>
