@@ -235,6 +235,22 @@ export function createApi(options: ApiOptions): (req: IncomingMessage, res: Serv
     const ranked = await rt.selector.select('@openai/codex', '>=0.0.0', url.searchParams.get('refresh') === '1')
     sendJson(res, 200, { registries: ranked })
   })
+  // ── update check (notify only; the Host never downloads or installs) ──
+  const updates = () => {
+    if (rt.updates === undefined) throw new HttpError(404, 'update checks are not available')
+    return rt.updates
+  }
+  route('GET', '/update', ({ res }) => sendJson(res, 200, { update: updates().status() }))
+  route('POST', '/update/check', async ({ res }) => {
+    const { outcome, status } = await updates().check({ manual: true })
+    sendJson(res, 200, { outcome, update: status })
+  })
+  route('POST', '/update/skip', async ({ res, body }) => {
+    const { version } = (await body()) as { version?: unknown }
+    if (typeof version !== 'string') throw new HttpError(400, 'version is required')
+    sendJson(res, 200, { update: updates().skip(version) })
+  })
+  route('POST', '/update/remind', ({ res }) => sendJson(res, 200, { update: updates().remindLater() }))
   route('GET', '/settings', ({ res }) => sendJson(res, 200, { settings: rt.settings.get() }))
   route('PUT', '/settings', async ({ res, body }) => {
     const patch = (await body()) as Record<string, unknown> | null

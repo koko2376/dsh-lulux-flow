@@ -10,6 +10,7 @@ import { readJsonFile, writeJsonAtomic } from './util/fs.js'
 import { findKernel } from './kernels/catalog.js'
 import { supportedPermissions } from './kernels/policy.js'
 import { normalizeRegistry } from './kernels/registry-probe.js'
+import { isUpdateSourceMode, type UpdateSourceMode } from './update/service.js'
 
 export interface KernelSettings {
   enabled: boolean
@@ -48,6 +49,10 @@ export interface LuluxFlowSettings {
    * dialog. Independent of DSH's own locale; Chinese by default.
    */
   language: PluginLanguage
+  /** Check for new releases automatically; null = follow the plugin Config (`updateAutoCheck`). */
+  updateAutoCheck: boolean | null
+  /** Where update checks ask: auto (fastest), official (GitHub) or mirror; null = follow the plugin Config. */
+  updateSource: UpdateSourceMode | null
 }
 
 export type PluginLanguage = 'zh-CN' | 'en'
@@ -90,6 +95,8 @@ export class SettingsStore {
       allowScriptNodes: loaded.allowScriptNodes === true,
       registryTrustMirror: loaded.registryTrustMirror === true,
       language: isPluginLanguage(loaded.language) ? loaded.language : DEFAULT_LANGUAGE,
+      updateAutoCheck: typeof loaded.updateAutoCheck === 'boolean' ? loaded.updateAutoCheck : null,
+      updateSource: isUpdateSourceMode(loaded.updateSource) ? loaded.updateSource : null,
     }
   }
 
@@ -126,6 +133,14 @@ export class SettingsStore {
     if (input.language !== undefined) {
       if (!isPluginLanguage(input.language)) throw new Error(`language must be one of ${PLUGIN_LANGUAGES.join(', ')}`)
       next.language = input.language
+    }
+    if (input.updateAutoCheck !== undefined) {
+      if (input.updateAutoCheck !== null && typeof input.updateAutoCheck !== 'boolean') throw new Error('updateAutoCheck must be true, false or null')
+      next.updateAutoCheck = input.updateAutoCheck
+    }
+    if (input.updateSource !== undefined) {
+      if (input.updateSource !== null && !isUpdateSourceMode(input.updateSource)) throw new Error('updateSource must be auto, official or mirror')
+      next.updateSource = input.updateSource
     }
     if (input.kernels !== undefined && typeof input.kernels === 'object') {
       for (const [id, raw] of Object.entries(input.kernels)) {

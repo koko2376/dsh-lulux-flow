@@ -14,6 +14,7 @@ import type { LintIssue } from './workflow/validate.js'
 import type { TriggerKind, Workflow, WorkflowRun } from './workflow/types.js'
 import type { StartOptions } from './workflow/engine.js'
 import type { HostApproval } from './dsh/host-types.js'
+import type { UpdateChecker } from './update/service.js'
 
 export interface LuluxFlowRuntime {
   store: WorkflowStore
@@ -22,6 +23,8 @@ export interface LuluxFlowRuntime {
   settings: SettingsStore
   gateway: KernelGateway
   selector: RegistrySelector
+  /** Release check (notify only); absent on Hosts or tests that do not wire it. */
+  updates?: UpdateChecker
   /** Effective: plugin Config `allowScriptNodes` OR the runtime setting. */
   readonly scriptsAllowed: boolean
   /** True when the plugin Config forces script nodes on (the setting cannot turn them off). */

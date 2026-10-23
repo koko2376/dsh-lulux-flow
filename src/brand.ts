@@ -12,6 +12,8 @@ export const BRAND = {
   id: 'dsh-lulux-flow',
   /** npm package name. */
   packageName: 'dsh-lulux-flow',
+  /** GitHub repository (`owner/name`); its Releases are the source of truth for update checks. */
+  repository: 'koko2376/dsh-lulux-flow',
   /** Prefix for model-facing tools (`lulux_flow_workflow_run`, ...). */
   toolPrefix: 'lulux_flow',
   /** Prefix for subagent provider names (`lulux-flow-claude-code`, ...). */

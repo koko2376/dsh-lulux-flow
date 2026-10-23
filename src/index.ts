@@ -38,6 +38,8 @@ import { WorkflowEngine } from './workflow/engine.js'
 import { createExecutors } from './workflow/executors.js'
 import { generateWorkflow } from './workflow/generate.js'
 import { WorkflowStore } from './workflow/store.js'
+import { DEFAULT_UPDATE_MIRRORS, mirrorNodes, officialNodes } from './update/sources.js'
+import { UpdateChecker, type UpdateSourceMode } from './update/service.js'
 
 export const name = BRAND.id
 /** Only the model runtime is required; the web server, agents, subagents and tools attach when present (so headless profiles work too). */
@@ -73,6 +75,9 @@ export interface Config {
   kernelEnvPassthrough: string[]
   kernelMaxConcurrent: number
   kernelMaxConcurrentPerCli: number
+  updateAutoCheck: boolean
+  updateSource: UpdateSourceMode
+  updateMirrors: string[]
 }
 
 export const Config: z<Config> = z.object({
@@ -118,6 +123,30 @@ export const Config: z<Config> = z.object({
     .i18n({
       'zh-CN': '单个 CLI（例如 Claude Code）同时运行的最大数量。超出的运行会排队等待。',
       en: 'Maximum runs at once of any one CLI (for example Claude Code). Further runs of that CLI wait in a queue.',
+    }),
+  updateAutoCheck: z
+    .boolean()
+    .default(true)
+    .description('Check GitHub Releases for a newer version (shortly after start, then once a day) and show a notice. Nothing is downloaded or installed.')
+    .i18n({
+      'zh-CN': '自动检查更新：启动后稍等片刻检查一次，之后每天一次，有新版本时显示提示。不会自动下载或安装。',
+      en: 'Check GitHub Releases for a newer version (shortly after start, then once a day) and show a notice. Nothing is downloaded or installed.',
+    }),
+  updateSource: z
+    .union([z.const('auto' as const), z.const('official' as const), z.const('mirror' as const)])
+    .default('auto')
+    .description('Where update checks ask: auto (fastest of GitHub and the mirrors), official (GitHub only) or mirror (jsDelivr mirrors only).')
+    .i18n({
+      'zh-CN': '更新源：auto（自动选择 GitHub 与镜像中最快的）、official（仅 GitHub 官方）、mirror（仅 jsDelivr 镜像，适合无法访问 GitHub 的网络）。',
+      en: 'Where update checks ask: auto (fastest of GitHub and the mirrors), official (GitHub only) or mirror (jsDelivr mirrors only).',
+    }),
+  updateMirrors: z
+    .array(z.string())
+    .default([...DEFAULT_UPDATE_MIRRORS])
+    .description('jsDelivr-compatible mirrors (https base URLs) asked for the latest version number only. Links always point to github.com.')
+    .i18n({
+      'zh-CN': '与 jsDelivr 兼容的镜像（https 基础地址），只用来读取最新版本号；提示中的链接始终指向 github.com。',
+      en: 'jsDelivr-compatible mirrors (https base URLs) asked for the latest version number only. Links always point to github.com.',
     }),
 }) as z<Config>
 
@@ -275,6 +304,18 @@ export function apply(ctx: Context, config: Config): void {
     },
   })
 
+  const updates = new UpdateChecker({
+    currentVersion: VERSION,
+    repository: BRAND.repository,
+    packageName: BRAND.packageName,
+    stateFile: join(dataDir, 'update-state.json'),
+    nodes: () => [...officialNodes(BRAND.repository), ...mirrorNodes(BRAND.repository, config.updateMirrors ?? DEFAULT_UPDATE_MIRRORS)],
+    mode: () => settings.get().updateSource ?? config.updateSource ?? 'auto',
+    autoCheck: () => settings.get().updateAutoCheck ?? config.updateAutoCheck ?? true,
+    userAgent: `${BRAND.packageName}/${VERSION}`,
+    logger: log,
+  })
+
   const runtime: LuluxFlowRuntime = {
     store,
     engine,
@@ -282,6 +323,7 @@ export function apply(ctx: Context, config: Config): void {
     settings,
     gateway,
     selector,
+    updates,
     get scriptsAllowed() {
       return scriptsAllowed()
     },
@@ -330,6 +372,8 @@ export function apply(ctx: Context, config: Config): void {
     observe()
     const observer = setInterval(observe, config.modelObserveIntervalMs)
     observer.unref?.()
+    // Release check: delayed after start, then daily; notify only.
+    const stopUpdates = updates.start()
     const stopTicker = startMinuteTicker(now => {
       if (stopped) return
       // Local minute (cron evaluates in local time), so a DST fall-back hour does not fire twice.
@@ -361,6 +405,7 @@ export function apply(ctx: Context, config: Config): void {
     return async () => {
       stopped = true
       clearInterval(observer)
+      stopUpdates()
       stopTicker()
       await engine.shutdown()
       tokens.clear()
