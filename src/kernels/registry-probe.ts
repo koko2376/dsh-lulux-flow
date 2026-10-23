@@ -46,7 +46,47 @@ export interface RankedRegistries {
   referenceVersion?: string
 }
 
-export type Fetcher = (url: string, init: { signal: AbortSignal; headers: Record<string, string> }) => Promise<Response>
+export type Fetcher = (url: string, init: { signal: AbortSignal; headers: Record<string, string>; redirect?: 'follow' | 'manual' | 'error' }) => Promise<Response>
+
+/** One timed GET: what the probes score (time to first byte, body throughput). */
+export interface TimedResponse {
+  status: number
+  headers: Headers
+  body: string
+  latencyMs: number
+  /** Bytes per second for the body; 0 when it was empty. */
+  throughput: number
+}
+
+/**
+ * A single GET under a hard timeout, timed the way every mirror probe here is
+ * scored (kernel registries and update sources). Rejects with
+ * `timeout after <n> ms` when the deadline passes; HTTP errors resolve, the
+ * caller decides what a status means. The body is capped at `maxBytes`.
+ */
+export async function timedGet(url: string, options: { timeoutMs: number; headers?: Record<string, string>; fetcher?: Fetcher; redirect?: 'follow' | 'manual' | 'error'; maxBytes?: number }): Promise<TimedResponse> {
+  const started = performance.now()
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs)
+  try {
+    const response = await (options.fetcher ?? fetch)(url, {
+      signal: controller.signal,
+      headers: options.headers ?? {},
+      ...(options.redirect !== undefined ? { redirect: options.redirect } : {}),
+    })
+    const ttfb = performance.now() - started
+    const body = await response.text()
+    const max = options.maxBytes ?? 4 * 1024 * 1024
+    if (body.length > max) throw new Error(`response larger than ${max} bytes`)
+    const total = Math.max(1, performance.now() - started)
+    return { status: response.status, headers: response.headers, body, latencyMs: Math.round(ttfb), throughput: body.length > 0 ? Math.round((body.length / total) * 1000) : 0 }
+  } catch (error: unknown) {
+    if (controller.signal.aborted) throw new Error(`timeout after ${options.timeoutMs} ms`)
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
@@ -64,25 +104,21 @@ function encodePackage(name: string): string {
 
 export async function probeRegistry(registry: string, packageName: string, minVersion: string, timeoutMs: number, fetcher: Fetcher = fetch): Promise<ProbeResult> {
   const started = performance.now()
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetcher(`${registry}/${encodePackage(packageName)}/latest`, {
-      signal: controller.signal,
+    const response = await timedGet(`${registry}/${encodePackage(packageName)}/latest`, {
+      timeoutMs,
+      fetcher,
       headers: { accept: 'application/json', 'user-agent': 'dsh-lulux-flow-registry-probe' },
     })
-    const ttfb = performance.now() - started
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const body = await response.text()
-    const total = Math.max(1, performance.now() - started)
-    const json = JSON.parse(body) as { version?: string; dist?: { integrity?: string; shasum?: string; tarball?: string } }
+    if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`)
+    const json = JSON.parse(response.body) as { version?: string; dist?: { integrity?: string; shasum?: string; tarball?: string } }
     const version = typeof json.version === 'string' ? json.version : undefined
     const integrity = json.dist?.integrity ?? (json.dist?.shasum ? `sha1-${Buffer.from(json.dist.shasum, 'hex').toString('base64')}` : undefined)
     return {
       registry,
       ok: true,
-      latencyMs: Math.round(ttfb),
-      throughput: Math.round((body.length / total) * 1000),
+      latencyMs: response.latencyMs,
+      throughput: response.throughput,
       ...(version !== undefined ? { version } : {}),
       ...(integrity !== undefined ? { integrity } : {}),
       ...(json.dist?.tarball !== undefined ? { tarball: json.dist.tarball } : {}),
@@ -96,13 +132,11 @@ export async function probeRegistry(registry: string, packageName: string, minVe
       ok: false,
       latencyMs: Math.round(performance.now() - started),
       throughput: 0,
-      error: controller.signal.aborted ? `timeout after ${timeoutMs} ms` : error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? error.message : String(error),
       satisfies: false,
       trusted: false,
       score: Number.POSITIVE_INFINITY,
     }
-  } finally {
-    clearTimeout(timer)
   }
 }
 
