@@ -3601,3 +3601,115 @@ button.lxf-issue:hover {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* ── update notice ──────────────────────────────────────── */
+
+.lxf-page__aside {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.lxf-update-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px 0 9px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  color: color-mix(in srgb, var(--lxf-accent) 80%, var(--lxf-label));
+  background: color-mix(in srgb, var(--lxf-accent) 10%, var(--lxf-glass));
+  -webkit-backdrop-filter: var(--lxf-blur-thin);
+  backdrop-filter: var(--lxf-blur-thin);
+  box-shadow: var(--lxf-specular), 0 0 0 0.5px color-mix(in srgb, var(--lxf-accent) 28%, transparent);
+  transition: background var(--lxf-dur) var(--lxf-ease);
+}
+
+.lxf-update-chip:hover,
+.lxf-update-chip[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--lxf-accent) 16%, var(--lxf-glass));
+}
+
+.lxf-update-chip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--lxf-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+.lxf-update-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--lxf-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lxf-accent) 18%, transparent);
+}
+
+.lxf-update {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+}
+
+.lxf-update__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lxf-update__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lxf-label);
+}
+
+.lxf-update__versions {
+  font-size: 12.5px;
+  color: var(--lxf-label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.lxf-update__label {
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--lxf-label-3);
+}
+
+.lxf-update__notes {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--lxf-label-2);
+  overflow-wrap: anywhere;
+}
+
+.lxf-update__notes li + li {
+  margin-top: 3px;
+}
+
+.lxf-update__empty,
+.lxf-update__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--lxf-label-3);
+}
+
+.lxf-update__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+a.lxf-btn {
+  text-decoration: none;
+}

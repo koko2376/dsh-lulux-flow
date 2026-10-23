@@ -25,8 +25,12 @@ import type { InstallState, InstallStatus } from '../../../src/kernels/installer
 import type { ProbeResult, RankedRegistries } from '../../../src/kernels/registry-probe.js'
 import type { KernelMode, KernelPermission } from '../../../src/kernels/types.js'
 import type { LuluxFlowSettings, KernelSettings } from '../../../src/settings.js'
+import type { CheckOutcome, UpdateSourceMode, UpdateStatus } from '../../../src/update/service.js'
 
 export type {
+  CheckOutcome,
+  UpdateSourceMode,
+  UpdateStatus,
   EdgeRoute,
   NodeEvidence,
   NodeStatus,

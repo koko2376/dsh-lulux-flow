@@ -10,7 +10,7 @@ import { RunHistory } from '../runs/RunHistory.tsx'
 import { RunInspector } from '../runs/RunInspector.tsx'
 import { Badge, Button, Empty, IconButton, Popover, Segmented, Spinner, cx } from '../ui/glass.tsx'
 import { BRAND_AVATAR } from '../ui/avatars.ts'
-import { IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconClock, IconShield, IconDownload, IconHistory, IconLayout, IconPlay, IconPlus, IconSave, IconSearch, IconSparkles, IconTrash, IconSidebar, IconSidebarRight, IconUpload, IconWarning } from '../ui/icons.tsx'
+import { IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconClock, IconShield, IconDownload, IconHistory, IconLayout, IconPlay, IconPlus, IconRefresh, IconSave, IconSearch, IconSparkles, IconTrash, IconSidebar, IconSidebarRight, IconUpload, IconWarning } from '../ui/icons.tsx'
 import { Canvas, issueText } from './Canvas.tsx'
 import { EdgeInspector } from './EdgeInspector.tsx'
 import { GenerateDialog, ImportDialog, RunDialog, TriggersDialog } from './dialogs.tsx'
@@ -280,6 +280,7 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
                     { key: 'triggers', icon: <IconClock />, run: () => setDialog('triggers') },
                     { key: 'history', icon: <IconHistory />, run: () => showTab('history', true) },
                     { key: 'export', icon: <IconDownload />, run: () => void download() },
+                    { key: 'checkUpdate', icon: <IconRefresh />, run: () => void actions.checkForUpdates() },
                   ] as const
                 ).map(item => (
                   <li key={item.key} role="none">

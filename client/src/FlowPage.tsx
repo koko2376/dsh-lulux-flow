@@ -9,6 +9,7 @@ import { KernelsView } from './kernels/KernelsView.tsx'
 import { BRAND_AVATAR } from './ui/avatars.ts'
 import { Segmented, cx } from './ui/glass.tsx'
 import { IconHistory, IconWarning, NodeIcons } from './ui/icons.tsx'
+import { UpdateNotice } from './update/UpdateNotice.tsx'
 
 export interface FlowPageInjected {
   actions: FlowActions
@@ -54,7 +55,9 @@ export function FlowPage({ t, useFlow, actions, locale }: FlowPageProps): ReactE
             { value: 'kernels', label: t('page.kernels'), icon: <KernelIcon size={14} /> },
           ]}
         />
-        <div className="lxf-page__spacer" />
+        <div className="lxf-page__spacer lxf-page__aside">
+          <UpdateNotice t={t} useFlow={useFlow} actions={actions} />
+        </div>
       </header>
       {meta?.upstreamError && (
         <div className="lxf-banner" role="alert">

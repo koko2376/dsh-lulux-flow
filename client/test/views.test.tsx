@@ -1,13 +1,15 @@
 /** Component tests for KernelSwitcher, KernelsView and SettingsSection against a fake plugin API. */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { KernelInfo, Meta } from '../src/api/types.ts'
+import type { KernelInfo, Meta, UpdateStatus } from '../src/api/types.ts'
 import { KernelsView } from '../src/kernels/KernelsView.tsx'
 import { KernelSwitcher, type DirectoryView } from '../src/session/KernelSwitcher.tsx'
 import { SettingsSection } from '../src/settings/SettingsSection.tsx'
 import { createFlowController } from '../src/store/flow.ts'
 import { createStore } from '../src/store/store.ts'
-import { bind, fakeApi, kernel, t, type Route } from './helpers.tsx'
+import { bind, fakeApi, kernel, t, tz, type Route } from './helpers.tsx'
+import { UpdateNotice } from '../src/update/UpdateNotice.tsx'
+import { Toasts } from '../src/Toasts.tsx'
 
 const meta = (partial: Partial<Meta> = {}): Meta => ({
   brand: { id: 'dsh-lulux-flow', displayName: 'DSH-LULUX Flow' },
@@ -263,5 +265,135 @@ describe('KernelSwitcher', () => {
     fireEvent.click(screen.getByRole('option', { name: /Gemini CLI/ }))
     await new Promise(r => setTimeout(r, 10))
     expect(select).not.toHaveBeenCalled()
+  })
+})
+
+// ── update notice (notify only) ──
+
+const updateStatus = (partial: Partial<UpdateStatus> = {}): UpdateStatus => ({
+  current: '0.1.1',
+  latest: '0.2.0',
+  updateAvailable: true,
+  notice: true,
+  url: 'https://github.com/koko2376/dsh-lulux-flow/releases/tag/v0.2.0',
+  notes: ['Faster kernels', '<img src=x onerror=alert(1)> stays text'],
+  publishedAt: '2026-10-30T00:00:00.000Z',
+  source: 'github-api',
+  checkedAt: '2026-10-30T01:00:00.000Z',
+  lastError: null,
+  skippedVersion: null,
+  remindUntil: null,
+  checking: false,
+  autoCheck: true,
+  sourceMode: 'auto',
+  ...partial,
+})
+
+function updateSetup(initial: UpdateStatus, check?: () => { status?: number; body: unknown }) {
+  let status = initial
+  return setup((method, path, body) => {
+    if (method === 'GET' && path === '/update') return { body: { update: status } }
+    if (method === 'POST' && path === '/update/remind') {
+      status = { ...status, notice: false, remindUntil: '2026-10-31T01:00:00.000Z' }
+      return { body: { update: status } }
+    }
+    if (method === 'POST' && path === '/update/skip') {
+      status = { ...status, notice: false, skippedVersion: (body as { version: string }).version }
+      return { body: { update: status } }
+    }
+    if (method === 'POST' && path === '/update/check') return check?.() ?? { body: { outcome: 'latest', update: status } }
+    return undefined
+  })
+}
+
+describe('UpdateNotice', () => {
+  it('shows a chip with versions, text-only notes and an allowlisted release link', async () => {
+    const { actions, useFlow } = updateSetup(updateStatus())
+    await act(() => actions.refreshUpdate())
+    const { container } = render(<UpdateNotice t={t} useFlow={useFlow} actions={actions} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Version 0.2.0 is available; show details' }))
+    const dialog = screen.getByRole('dialog', { name: 'Update available' })
+    expect(within(dialog).getByText('Current 0.1.1 → latest 0.2.0')).toBeTruthy()
+    expect(within(dialog).getByText('<img src=x onerror=alert(1)> stays text')).toBeTruthy()
+    expect(document.querySelector('.lxf-update img')).toBeNull()
+    expect(container.querySelector('img')).toBeNull()
+    const link = within(dialog).getByRole('link', { name: 'View release' }) as HTMLAnchorElement
+    expect(link.href).toBe('https://github.com/koko2376/dsh-lulux-flow/releases/tag/v0.2.0')
+    expect(link.rel).toContain('noopener')
+    expect(link.target).toBe('_blank')
+  })
+
+  it('never links anywhere but the GitHub releases of this repository', async () => {
+    const { actions, useFlow } = updateSetup(updateStatus({ url: 'https://evil.example/releases/tag/v0.2.0', notes: [] }))
+    await act(() => actions.refreshUpdate())
+    render(<UpdateNotice t={t} useFlow={useFlow} actions={actions} />)
+    fireEvent.click(screen.getByRole('button', { name: /0\.2\.0/ }))
+    expect((screen.getByRole('link', { name: 'View release' }) as HTMLAnchorElement).href).toBe('https://github.com/koko2376/dsh-lulux-flow/releases')
+    expect(screen.getByText('Release notes are on the GitHub release page.')).toBeTruthy()
+  })
+
+  it('stays hidden without a notice', async () => {
+    const { actions, useFlow } = updateSetup(updateStatus({ notice: false }))
+    await act(() => actions.refreshUpdate())
+    const { container } = render(<UpdateNotice t={t} useFlow={useFlow} actions={actions} />)
+    expect(container.innerHTML).toBe('')
+  })
+
+  it('remind later and skip this version go to the Host and hide the chip', async () => {
+    const first = updateSetup(updateStatus())
+    await act(() => first.actions.refreshUpdate())
+    const view = render(<UpdateNotice t={t} useFlow={first.useFlow} actions={first.actions} />)
+    fireEvent.click(screen.getByRole('button', { name: /0\.2\.0/ }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Remind later' })))
+    expect(first.calls.some(c => c.method === 'POST' && c.path === '/update/remind')).toBe(true)
+    await waitFor(() => expect(screen.queryByRole('button', { name: /0\.2\.0/ })).toBeNull())
+    view.unmount()
+
+    const second = updateSetup(updateStatus())
+    await act(() => second.actions.refreshUpdate())
+    render(<UpdateNotice t={tz} useFlow={second.useFlow} actions={second.actions} />)
+    fireEvent.click(screen.getByRole('button', { name: '有新版本 0.2.0，查看详情' }))
+    expect(screen.getByRole('link', { name: '查看更新' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '稍后提醒' })).toBeTruthy()
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '忽略此版本' })))
+    expect(second.calls.find(c => c.method === 'POST' && c.path === '/update/skip')?.body).toEqual({ version: '0.2.0' })
+    await waitFor(() => expect(screen.queryByRole('button', { name: /0\.2\.0/ })).toBeNull())
+  })
+
+  it('manual check toasts up to date / new version / failed', async () => {
+    let answer: { status?: number; body: unknown } = { body: { outcome: 'latest', update: updateStatus({ latest: '0.1.1', updateAvailable: false, notice: false }) } }
+    const { actions, useFlow, store } = updateSetup(updateStatus({ notice: false }), () => answer)
+    render(<Toasts t={tz} useFlow={useFlow} actions={actions} />)
+    await act(() => actions.checkForUpdates())
+    expect(screen.getByText('已是最新版本（0.1.1）')).toBeTruthy()
+    answer = { body: { outcome: 'available', update: updateStatus() } }
+    await act(() => actions.checkForUpdates())
+    expect(screen.getByText('有新版本：0.2.0')).toBeTruthy()
+    expect(store.getSnapshot().update.status?.notice).toBe(true)
+    answer = { body: { outcome: 'failed', update: updateStatus() } }
+    await act(() => actions.checkForUpdates())
+    answer = { status: 500, body: { error: 'boom' } }
+    await act(() => actions.checkForUpdates())
+    expect(screen.getAllByText('检查更新失败，请稍后再试').length).toBeGreaterThanOrEqual(1)
+    expect(store.getSnapshot().update.checking).toBe(false)
+  })
+
+  it('a Host without update checks shows nothing and raises no error', async () => {
+    const { actions, store } = setup()
+    await act(() => actions.refreshUpdate())
+    expect(store.getSnapshot().update.status).toBeNull()
+    expect(store.getSnapshot().toasts).toEqual([])
+  })
+
+  it('settings switch auto-check and the update source', async () => {
+    const { actions, useFlow, calls } = updateSetup(updateStatus({ notice: false }))
+    render(<SettingsSection t={t} useFlow={useFlow} actions={actions} />)
+    const toggle = await screen.findByRole('switch', { name: 'Check for updates automatically' })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    await act(async () => fireEvent.click(toggle))
+    expect(calls.find(c => c.method === 'PUT' && c.path === '/settings' && 'updateAutoCheck' in (c.body as object))?.body).toEqual({ updateAutoCheck: false })
+    await act(async () => fireEvent.change(screen.getByLabelText('Update source'), { target: { value: 'mirror' } }))
+    expect(calls.find(c => c.method === 'PUT' && c.path === '/settings' && 'updateSource' in (c.body as object))?.body).toEqual({ updateSource: 'mirror' })
+    expect(within(screen.getByLabelText('Update source')).getAllByRole('option').map(o => o.textContent)).toEqual(['Auto (fastest)', 'GitHub (official)', 'Mirror (jsDelivr)'])
   })
 })

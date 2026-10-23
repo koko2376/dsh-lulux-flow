@@ -11,6 +11,7 @@ export const BRAND = {
   displayNameZh: HOST.displayNameZh,
   id: HOST.id,
   providerPrefix: HOST.providerPrefix,
+  repository: HOST.repository,
   headers: {
     csrf: HOST.headers.csrf,
     signature: HOST.headers.signature,

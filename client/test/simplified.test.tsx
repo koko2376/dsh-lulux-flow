@@ -144,6 +144,7 @@ describe('workflow page', () => {
       'TriggersRun on a schedule or from a webhook',
       'Run historyPast runs of this workflow',
       'Export JSONDownload as a JSON file to share or back up',
+      'Check for updatesSee whether a newer release is on GitHub',
     ])
   })
 })

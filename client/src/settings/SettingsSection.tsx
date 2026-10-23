@@ -1,6 +1,6 @@
 /** Settings → plugin section (`settings.section`). */
 import { useEffect, useId, useState, type ReactElement } from 'react'
-import { permissionsFor, type KernelPermission } from '../api/types.ts'
+import { permissionsFor, type KernelPermission, type UpdateSourceMode } from '../api/types.ts'
 import { DEFAULT_LANGUAGE, isPluginLanguage, PLUGIN_LANGUAGES } from '../i18n/language.ts'
 import type { Translate } from '../i18n/translate.ts'
 import type { FlowActions, FlowState } from '../store/flow.ts'
@@ -12,17 +12,21 @@ import { IconWarning } from '../ui/icons.tsx'
 /** Kernels enabled by default; mirrors DEFAULT_ENABLED_KERNELS in src/settings.ts. */
 export const DEFAULT_SUBAGENT_ON: readonly string[] = ['claude-code', 'codex']
 export const DEFAULT_PERMISSION: KernelPermission = 'ask'
+const UPDATE_SOURCES: readonly UpdateSourceMode[] = ['auto', 'official', 'mirror']
 
 export function SettingsSection({ t, useFlow, actions }: { t: Translate; useFlow: SelectorHook<FlowState>; actions: FlowActions }): ReactElement {
   const settings = useFlow(s => s.settings)
   const kernels = useFlow(s => s.kernels.items)
   const meta = useFlow(s => s.meta)
+  const update = useFlow(s => s.update)
   const [gateway, setGateway] = useState('')
   const [mirror, setMirror] = useState('')
   const warnId = useId()
   const trustId = useId()
+  const autoUpdateId = useId()
   useEffect(() => {
     void actions.loadSettings()
+    void actions.refreshUpdate()
     void actions.refreshKernels()
     void actions.refreshMeta()
   }, [actions])
@@ -39,6 +43,9 @@ export function SettingsSection({ t, useFlow, actions }: { t: Translate; useFlow
   const scriptsOn = meta?.scriptsAllowed ?? false
   const gatewayBad = gateway.trim() !== '' && !/^[^/\s]+\/\S+$/.test(gateway.trim())
   const mirrorBad = mirror.trim() !== '' && !isRegistryUrl(mirror.trim())
+  const autoCheck = value?.updateAutoCheck ?? update.status?.autoCheck ?? true
+  const sourceMode = value?.updateSource ?? update.status?.sourceMode ?? 'auto'
+  const saveUpdate = (change: { updateAutoCheck?: boolean; updateSource?: UpdateSourceMode }): void => void actions.saveSettings(change).then(ok => (ok ? actions.refreshUpdate() : undefined))
   const changed = value !== null && (gateway.trim() !== value.gatewayModel || mirror.trim() !== value.registryOverride)
 
   return (
@@ -70,6 +77,46 @@ export function SettingsSection({ t, useFlow, actions }: { t: Translate; useFlow
               {PLUGIN_LANGUAGES.map(lang => (
                 <option key={lang} value={lang} lang={lang}>
                   {t(`settings.language.${lang}`)}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+      </section>
+
+      <section className="lxf-card">
+        <div className="lxf-settings__sechead">
+          <h3 className="lxf-section__title">{t('settings.updates')}</h3>
+          <Button size="sm" variant="ghost" disabled={update.checking} aria-busy={update.checking} onClick={() => void actions.checkForUpdates()}>
+            {t('toolbar.checkUpdate')}
+          </Button>
+        </div>
+        {update.status !== null && <p className="lxf-field__hint">{t('settings.updateCurrent', { version: update.status.current })}</p>}
+        <div className="lxf-togglerow">
+          <div>
+            <div className="lxf-togglerow__label">{t('settings.updateAuto')}</div>
+            <div id={autoUpdateId} className="lxf-field__hint">
+              {t('settings.updateAuto.hint')}
+            </div>
+          </div>
+          <Switch checked={autoCheck} disabled={value === null || settings.saving} describedBy={autoUpdateId} label={t('settings.updateAuto')} onChange={on => saveUpdate({ updateAutoCheck: on })} />
+        </div>
+        <Field label={t('settings.updateSource')} hint={t('settings.updateSource.hint')}>
+          {(id, hint) => (
+            <select
+              id={id}
+              aria-describedby={hint}
+              className="lxf-input lxf-select lxf-select--sm"
+              value={sourceMode}
+              disabled={value === null || settings.saving}
+              onChange={e => {
+                const next = UPDATE_SOURCES.find(m => m === e.target.value)
+                if (next !== undefined) saveUpdate({ updateSource: next })
+              }}
+            >
+              {UPDATE_SOURCES.map(mode => (
+                <option key={mode} value={mode}>
+                  {t(`settings.updateSource.${mode}`)}
                 </option>
               ))}
             </select>

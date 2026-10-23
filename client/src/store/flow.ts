@@ -22,6 +22,7 @@ import type {
   Workflow,
   WorkflowListItem,
   WorkflowRun,
+  UpdateStatus,
 } from '../api/types.ts'
 import { autoLayout, connect, createNode, removeEdge, removeNode } from './graph.ts'
 import { createStore, type Store } from './store.ts'
@@ -66,6 +67,8 @@ export interface FlowState {
   runs: { status: LoadStatus; items: WorkflowRun[]; active: WorkflowRun | null; focusNode: string | null }
   kernels: { status: LoadStatus; items: KernelInfo[]; registries: RankedRegistries | null; probing: boolean; tests: Record<string, KernelTest> }
   settings: { status: LoadStatus; value: FlowSettingsView | null; saving: boolean; error: string | null }
+  /** Release check state from the Host (null until loaded, or on Hosts without update checks). */
+  update: { status: UpdateStatus | null; checking: boolean }
   toasts: Toast[]
 }
 
@@ -78,6 +81,7 @@ export const initialState = (): FlowState => ({
   runs: { status: 'idle', items: [], active: null, focusNode: null },
   kernels: { status: 'idle', items: [], registries: null, probing: false, tests: {} },
   settings: { status: 'idle', value: null, saving: false, error: null },
+  update: { status: null, checking: false },
   toasts: [],
 })
 
@@ -129,6 +133,12 @@ export interface FlowActions {
   refreshMeta(): Promise<void>
   loadSettings(): Promise<void>
   saveSettings(patch: Partial<FlowSettingsView> | Record<string, unknown>): Promise<boolean>
+  /** Re-read the Host's update status (no network beyond the Host). */
+  refreshUpdate(): Promise<void>
+  /** Manual "Check for updates": asks the Host to check now and toasts the outcome. */
+  checkForUpdates(): Promise<void>
+  skipUpdate(version: string): Promise<void>
+  remindUpdateLater(): Promise<void>
   toast(tone: Toast['tone'], text: string, params?: Record<string, string | number>, raw?: boolean): void
   dismissToast(id: number): void
 }
@@ -141,7 +151,10 @@ export interface FlowController {
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 const isCode = (error: unknown, status: number, code: string): boolean => error instanceof ApiError && error.status === status && error.code === code
 
-export function createFlowController(api: FlowApi, options: { pollMs?: number } = {}): FlowController {
+/** How often the page re-reads the Host's update status while it is shown (the Host itself checks daily). */
+export const UPDATE_STATUS_POLL_MS = 15 * 60_000
+
+export function createFlowController(api: FlowApi, options: { pollMs?: number; updatePollMs?: number } = {}): FlowController {
   const store = createStore<FlowState>(initialState())
   const get = store.getSnapshot
   const patch = <K extends keyof FlowState>(key: K, value: Partial<FlowState[K]>): void =>
@@ -238,9 +251,12 @@ export function createFlowController(api: FlowApi, options: { pollMs?: number } 
       void actions.refreshWorkflows()
       void actions.refreshRuns()
       void actions.refreshKernels()
+      void actions.refreshUpdate()
+      const updatePoll = setInterval(() => void actions.refreshUpdate(), options.updatePollMs ?? UPDATE_STATUS_POLL_MS)
       const stop = api.subscribe(onEvent, connected => store.set(s => (s.connected === connected ? s : { ...s, connected })))
       return () => {
         stop()
+        clearInterval(updatePoll)
         if (installPoll !== undefined) clearTimeout(installPoll)
         if (lintTimer !== undefined) clearTimeout(lintTimer)
       }
@@ -634,6 +650,42 @@ export function createFlowController(api: FlowApi, options: { pollMs?: number } 
         patch('settings', { saving: false, error: message(error) })
         fail(isCode(error, 403, 'config_only') ? 'toast.scriptsConfigOnly' : 'toast.settingsFailed', error)
         return false
+      }
+    },
+    async refreshUpdate() {
+      try {
+        const status = await api.getUpdate()
+        patch('update', { status })
+      } catch {
+        /* Host without update checks, or offline: no notice, no error */
+      }
+    },
+    async checkForUpdates() {
+      if (get().update.checking) return
+      patch('update', { checking: true })
+      try {
+        const { outcome, update } = await api.checkUpdate()
+        patch('update', { status: update, checking: false })
+        if (outcome === 'available') toast('info', 'update.toast.available', { version: update.latest ?? '' })
+        else if (outcome === 'latest') toast('success', 'update.toast.latest', { version: update.current })
+        else toast('error', 'update.toast.failed')
+      } catch {
+        patch('update', { checking: false })
+        toast('error', 'update.toast.failed')
+      }
+    },
+    async skipUpdate(version) {
+      try {
+        patch('update', { status: await api.skipUpdate(version) })
+      } catch {
+        /* keep the notice; nothing to report */
+      }
+    },
+    async remindUpdateLater() {
+      try {
+        patch('update', { status: await api.remindUpdate() })
+      } catch {
+        /* keep the notice; nothing to report */
       }
     },
     toast,

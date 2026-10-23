@@ -5,6 +5,8 @@
  */
 import { API_ROOT, BRAND } from '../brand.ts'
 import type {
+  CheckOutcome,
+  UpdateStatus,
   FlowSettingsView,
   EngineEvent,
   InstallState,
@@ -119,6 +121,11 @@ export class FlowApi {
   registries = (refresh = false) => this.request<{ registries: RankedRegistries }>('GET', `/registries${refresh ? '?refresh=1' : ''}`).then(r => r.registries)
   getSettings = () => this.request<{ settings: FlowSettingsView }>('GET', '/settings').then(r => r.settings)
   updateSettings = (patch: Partial<FlowSettingsView> | Record<string, unknown>) => this.request<{ settings: FlowSettingsView }>('PUT', '/settings', patch).then(r => r.settings)
+
+  getUpdate = () => this.request<{ update: UpdateStatus }>('GET', '/update').then(r => r.update)
+  checkUpdate = () => this.request<{ outcome: CheckOutcome; update: UpdateStatus }>('POST', '/update/check', {})
+  skipUpdate = (version: string) => this.request<{ update: UpdateStatus }>('POST', '/update/skip', { version }).then(r => r.update)
+  remindUpdate = () => this.request<{ update: UpdateStatus }>('POST', '/update/remind', {}).then(r => r.update)
 
   /** Live engine events. Returns a disposer; reconnects with backoff while subscribed. */
   subscribe(listener: (event: EngineEvent) => void, onStatus?: (connected: boolean) => void): () => void {
