@@ -23,7 +23,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, join } from 'node:path'
 import { redact } from '../util/redact.js'
-import { readManagedPackage, resolveCmdShim } from './binary.js'
+import { entryCommand, nodeSpawnEnv, readManagedPackage, resolveCmdShim } from './binary.js'
 import { CANONICAL_REGISTRY, normalizeRegistry, type RankedRegistries, type RegistrySelector } from './registry-probe.js'
 import type { KernelDefinition } from './types.js'
 import { npmBaseEnv } from './env.js'
@@ -63,8 +63,8 @@ export function resolveNpm(): NpmCommand | undefined {
       const shim = join(dir, 'npm.cmd')
       if (!existsSync(shim)) continue
       const direct = join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js')
-      const entry = existsSync(direct) ? direct : resolveCmdShim(shim, { npmPackage: 'npm', bin: 'npm' })
-      if (entry !== undefined) return { command: process.execPath, prefixArgs: [entry], description: `npm from ${dir}` }
+      const entry = existsSync(direct) ? { file: direct, kind: 'node' as const } : resolveCmdShim(shim, { npmPackage: 'npm', bin: 'npm' })
+      if (entry !== undefined) return { ...entryCommand(entry), description: `npm from ${dir}` }
     }
     return undefined
   }
@@ -294,7 +294,7 @@ export class KernelInstaller {
     const noProxy = [env.NO_PROXY ?? env.no_proxy ?? '', '127.0.0.1,localhost,::1'].filter(Boolean).join(',')
     env.NO_PROXY = env.no_proxy = env.npm_config_noproxy = noProxy
     return new Promise(resolve => {
-      const child = spawn(npm.command, args, { cwd: dir, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+      const child = spawn(npm.command, args, { cwd: dir, env: nodeSpawnEnv(npm.command, env), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
       const timer = setTimeout(() => child.kill('SIGTERM'), this.options.timeoutMs)
       const onData = (chunk: Buffer): void => {
         for (const line of chunk.toString('utf8').split(/\r?\n/)) if (line.trim()) this.append(def.id, line.trim())

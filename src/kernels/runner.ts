@@ -16,7 +16,7 @@ import type { UpstreamTarget } from '../gateway/canonical.js'
 import type { TokenStore } from '../gateway/tokens.js'
 import { redact, TailBuffer } from '../util/redact.js'
 import { safeJoin } from '../util/fs.js'
-import { resolveBinary, spawnArgs, type ResolvedBinary } from './binary.js'
+import { nodeSpawnEnv, resolveBinary, spawnArgs, type ResolvedBinary } from './binary.js'
 import { globalBaseEnv, scopedBaseEnv } from './env.js'
 import type { KernelDefinition, KernelEvent, KernelMode, KernelPermission } from './types.js'
 
@@ -204,7 +204,7 @@ export class KernelRunner {
       const child = spawn(spec.command, spec.args, {
         cwd: request.cwd,
         windowsVerbatimArguments: spec.windowsVerbatimArguments,
-        env,
+        env: nodeSpawnEnv(spec.command, env),
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: process.platform !== 'win32',
         windowsHide: true,

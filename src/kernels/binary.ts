@@ -31,7 +31,7 @@ function isExecutable(file: string): boolean {
   }
 }
 
-function isNodeScript(file: string): boolean {
+export function isNodeScript(file: string): boolean {
   if (/\.(c|m)?js$/.test(file)) return true
   try {
     const head = readFileSync(file, { encoding: 'utf8', flag: 'r' }).slice(0, 128)
@@ -65,20 +65,49 @@ function fromManaged(installRoot: string, def: KernelDefinition): ResolvedBinary
   return { command: file, prefixArgs: [], source: 'managed', file }
 }
 
+/** What an npm `.cmd` shim launches: a Node script, or a native executable (e.g. Claude Code's bun-compiled `claude.exe`). */
+export interface ShimEntry {
+  file: string
+  kind: 'node' | 'native'
+}
+
 /**
- * Find the JavaScript entry behind an npm `.cmd` shim, so the CLI can be run
+ * Environment for spawning `command`. When the command is the current
+ * process's own executable inside Electron (DSH Desktop), it must run as
+ * plain Node: without ELECTRON_RUN_AS_NODE=1 Electron starts a second GUI
+ * instance instead of running the script. Applied after any allowlist
+ * filtering so it cannot be stripped.
+ */
+export function nodeSpawnEnv<T extends Record<string, string | undefined>>(command: string, env: T): T {
+  if (process.versions.electron !== undefined && command === process.execPath) return { ...env, ELECTRON_RUN_AS_NODE: '1' }
+  return env
+}
+
+/** Command and leading args for a shim entry: Node scripts run with the current runtime, native executables directly. */
+export function entryCommand(entry: ShimEntry): { command: string; prefixArgs: string[] } {
+  return entry.kind === 'node' ? { command: process.execPath, prefixArgs: [entry.file] } : { command: entry.file, prefixArgs: [] }
+}
+
+/**
+ * Find the entry behind an npm `.cmd` shim, so the CLI can be run
  * with `node <entry>` instead of through cmd.exe (whose quoting mangles
  * arguments and interprets `& | ^ %`). Looks at the `"%dp0%\…\x.js"` path
  * the shim points to, then at `node_modules/<pkg>` next to the shim.
  */
-export function resolveCmdShim(file: string, def: Pick<KernelDefinition, 'npmPackage' | 'bin'>, read: (f: string) => string = f => readFileSync(f, 'utf8'), exists: (f: string) => boolean = existsSync): string | undefined {
+export function resolveCmdShim(
+  file: string,
+  def: Pick<KernelDefinition, 'npmPackage' | 'bin'>,
+  read: (f: string) => string = f => readFileSync(f, 'utf8'),
+  exists: (f: string) => boolean = existsSync,
+  classify: (f: string) => ShimEntry['kind'] = f => (isNodeScript(f) ? 'node' : 'native'),
+): ShimEntry | undefined {
   const dir = dirname(file)
   try {
     const text = read(file)
-    const match = /"%~?dp0%?\\?([^"%]+?\.(?:c|m)?js)"/i.exec(text)
+    const match = /"%~?dp0%?\\?([^"%]+?\.(?:(?:c|m)?js|exe))"/i.exec(text)
     if (match) {
       const entry = resolvePath(dir, match[1]!.replace(/\\/g, '/'))
-      if (exists(entry)) return entry
+      if (exists(entry)) return { file: entry, kind: /\.exe$/i.test(entry) ? 'native' : 'node' }
     }
   } catch {
     /* unreadable shim */
@@ -87,7 +116,10 @@ export function resolveCmdShim(file: string, def: Pick<KernelDefinition, 'npmPac
   try {
     const pkg = JSON.parse(read(join(pkgDir, 'package.json'))) as { bin?: string | Record<string, string> }
     const rel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.[def.bin]
-    if (rel !== undefined && exists(join(pkgDir, rel))) return join(pkgDir, rel)
+    if (rel !== undefined && exists(join(pkgDir, rel))) {
+      const entry = join(pkgDir, rel)
+      return { file: entry, kind: /\.(c|m)?js$/i.test(entry) ? 'node' : /\.exe$/i.test(entry) ? 'native' : classify(entry) }
+    }
   } catch {
     /* not an npm global prefix */
   }
@@ -131,7 +163,7 @@ function fromPath(def: KernelDefinition, envPath: string | undefined, platform: 
       if (isExecutable(file)) {
         if (/\.cmd$/i.test(file)) {
           const entry = resolveCmdShim(file, def)
-          if (entry !== undefined) return { command: process.execPath, prefixArgs: [entry], source: 'path', file }
+          if (entry !== undefined) return { ...entryCommand(entry), source: 'path', file }
           return { command: process.env.ComSpec ?? 'cmd.exe', prefixArgs: [], source: 'path', file, cmdShim: true }
         }
         return { command: file, prefixArgs: [], source: 'path', file }
@@ -180,7 +212,7 @@ export function satisfiesMinVersion(version: string, range: string): boolean {
 export function probeVersion(binary: ResolvedBinary, timeoutMs = 10_000, env: Record<string, string> = scopedBaseEnv()): Promise<string | undefined> {
   const spawnSpec = spawnArgs(binary, ['--version'])
   return new Promise(resolve => {
-    execFile(spawnSpec.command, spawnSpec.args, { timeout: timeoutMs, windowsHide: true, windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments, env }, (error, stdout, stderr) => {
+    execFile(spawnSpec.command, spawnSpec.args, { timeout: timeoutMs, windowsHide: true, windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments, env: nodeSpawnEnv(spawnSpec.command, env) }, (error, stdout, stderr) => {
       if (error && !stdout) {
         resolve(undefined)
         return

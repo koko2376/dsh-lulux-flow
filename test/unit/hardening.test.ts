@@ -9,7 +9,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { cmdCommandLine, probeVersion, quoteCmdArg, resolveCmdShim, spawnArgs } from '../../src/kernels/binary.js'
+import { cmdCommandLine, entryCommand, nodeSpawnEnv, probeVersion, quoteCmdArg, resolveCmdShim, spawnArgs } from '../../src/kernels/binary.js'
 import { claudeAbsoluteRule, claudeDenyRules, findKernel } from '../../src/kernels/catalog.js'
 import { hasUserinfo, npmBaseEnv, scopedBaseEnv } from '../../src/kernels/env.js'
 import { SettingsStore } from '../../src/settings.js'
@@ -140,12 +140,47 @@ describe('Windows .cmd shims', () => {
     writeFileSync(entry, '')
     const shim = join(dir, 'codex.cmd')
     writeFileSync(shim, '@ECHO off\r\nGOTO start\r\n:start\r\nSET "_prog=node"\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n')
-    expect(resolveCmdShim(shim, { npmPackage: '@openai/codex', bin: 'codex' })).toBe(entry)
+    expect(resolveCmdShim(shim, { npmPackage: '@openai/codex', bin: 'codex' })).toEqual({ file: entry, kind: 'node' })
     // no path in the shim: fall back to node_modules/<pkg>/package.json
     writeFileSync(shim, '@echo off\r\n')
     writeFileSync(join(dir, 'node_modules', '@openai', 'codex', 'package.json'), JSON.stringify({ bin: { codex: 'bin/codex.js' } }))
-    expect(resolveCmdShim(shim, { npmPackage: '@openai/codex', bin: 'codex' })).toBe(entry)
+    expect(resolveCmdShim(shim, { npmPackage: '@openai/codex', bin: 'codex' })).toEqual({ file: entry, kind: 'node' })
     expect(resolveCmdShim(join(dir, 'missing.cmd'), { npmPackage: '@x/y', bin: 'y' })).toBeUndefined()
+  })
+  it('treats a shim that points at a native exe (Claude Code >= 2.1 claude.exe) as native, never as a Node script', () => {
+    const dir = tempDir()
+    const binDir = join(dir, 'node_modules', '@anthropic-ai', 'claude-code', 'bin')
+    mkdirSync(binDir, { recursive: true })
+    const exe = join(binDir, 'claude.exe')
+    writeFileSync(exe, Buffer.from([0x4d, 0x5a, 0x90, 0x00]))
+    const shim = join(dir, 'claude.cmd')
+    writeFileSync(shim, '@ECHO off\r\n"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe" %*\r\n')
+    const entry = resolveCmdShim(shim, { npmPackage: '@anthropic-ai/claude-code', bin: 'claude' })
+    expect(entry).toEqual({ file: exe, kind: 'native' })
+    expect(entryCommand(entry!)).toEqual({ command: exe, prefixArgs: [] })
+    // same answer through the package.json bin fallback
+    writeFileSync(shim, '@echo off\r\n')
+    writeFileSync(join(dir, 'node_modules', '@anthropic-ai', 'claude-code', 'package.json'), JSON.stringify({ bin: { claude: 'bin/claude.exe' } }))
+    expect(resolveCmdShim(shim, { npmPackage: '@anthropic-ai/claude-code', bin: 'claude' })).toEqual({ file: exe, kind: 'native' })
+    // an extensionless native bin is classified by content
+    writeFileSync(join(binDir, 'claude'), Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
+    writeFileSync(join(dir, 'node_modules', '@anthropic-ai', 'claude-code', 'package.json'), JSON.stringify({ bin: { claude: 'bin/claude' } }))
+    expect(resolveCmdShim(shim, { npmPackage: '@anthropic-ai/claude-code', bin: 'claude' })?.kind).toBe('native')
+    expect(entryCommand({ file: '/x/cli.js', kind: 'node' })).toEqual({ command: process.execPath, prefixArgs: ['/x/cli.js'] })
+  })
+  it('runs the host executable as Node inside Electron (ELECTRON_RUN_AS_NODE=1), and only then', () => {
+    const versions = process.versions as Record<string, string | undefined>
+    const had = versions.electron
+    try {
+      versions.electron = '38.0.0'
+      expect(nodeSpawnEnv(process.execPath, { PATH: '/bin' })).toEqual({ PATH: '/bin', ELECTRON_RUN_AS_NODE: '1' })
+      expect(nodeSpawnEnv('/usr/local/bin/claude', { PATH: '/bin' })).toEqual({ PATH: '/bin' })
+      delete versions.electron
+      expect(nodeSpawnEnv(process.execPath, { PATH: '/bin' })).toEqual({ PATH: '/bin' })
+    } finally {
+      if (had === undefined) delete versions.electron
+      else versions.electron = had
+    }
   })
   it('quotes arguments for cmd.exe so quotes, spaces and metacharacters stay literal', () => {
     expect(quoteCmdArg('plain')).toBe('^"plain^"')
