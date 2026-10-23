@@ -10,7 +10,7 @@
  *   so it can still read files that user can read; see SECURITY.md.
  */
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync, chmodSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { UpstreamTarget } from '../gateway/canonical.js'
 import type { TokenStore } from '../gateway/tokens.js'
@@ -18,6 +18,7 @@ import { redact, TailBuffer } from '../util/redact.js'
 import { safeJoin } from '../util/fs.js'
 import { nodeSpawnEnv, resolveBinary, spawnArgs, type ResolvedBinary } from './binary.js'
 import { globalBaseEnv, scopedBaseEnv } from './env.js'
+import { killTree } from './kill.js'
 import type { KernelDefinition, KernelEvent, KernelMode, KernelPermission } from './types.js'
 
 export interface KernelRunRequest {
@@ -71,20 +72,11 @@ export interface KernelRunnerDeps {
 
 const LOGIN_PATTERN = /\b(log ?in|sign ?in|unauthori[sz]ed|authenticat|api[ _-]?key|credential|\/login|oauth)/i
 
-function killTree(pid: number | undefined, signal: NodeJS.Signals): void {
-  if (pid === undefined) return
+function isDirectory(path: string): boolean {
   try {
-    if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
-    } else {
-      process.kill(-pid, signal)
-    }
+    return statSync(path).isDirectory()
   } catch {
-    try {
-      process.kill(pid, signal)
-    } catch {
-      /* already gone */
-    }
+    return false
   }
 }
 
@@ -106,7 +98,12 @@ export class KernelRunner {
     if (binary === undefined) {
       return { ...base, status: 'error', durationMs: 0, diagnostic: `${kernel.name} is not installed. Install it from DSH-LULUX Flow → Kernels, or put \`${kernel.bin}\` on PATH.` }
     }
+    if (binary.problem !== undefined) return { ...base, status: 'error', durationMs: 0, diagnostic: `${kernel.name} cannot be started: ${binary.problem}` }
     if (request.signal?.aborted) return { ...base, status: 'aborted', durationMs: 0 }
+    if (!isDirectory(request.cwd)) {
+      // spawn() reports a missing cwd as "spawn <binary> ENOENT", which reads as "CLI not installed".
+      return { ...base, status: 'error', durationMs: 0, diagnostic: `working directory does not exist: ${request.cwd}` }
+    }
 
     mkdirSync(this.deps.runsRoot, { recursive: true, mode: 0o700 })
     const home = mkdtempSync(join(this.deps.runsRoot, `${kernel.id}-`))

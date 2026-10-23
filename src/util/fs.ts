@@ -29,10 +29,28 @@ export function writeJsonAtomic(file: string, value: unknown): void {
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
   writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
   try {
-    renameSync(tmp, file)
+    renameWithRetry(tmp, file)
   } catch (error) {
     rmSync(tmp, { force: true })
     throw error
+  }
+}
+
+/**
+ * On Windows, replacing a file fails with EPERM/EACCES/EBUSY while another
+ * process (an antivirus scanner, the search indexer, a reader) briefly holds
+ * it open. Retry for up to about a second before giving up.
+ */
+export function renameWithRetry(from: string, to: string, rename: (a: string, b: string) => void = renameSync, attempts = 10): void {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      rename(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (attempt >= attempts || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) throw error
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * attempt)
+    }
   }
 }
 

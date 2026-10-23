@@ -21,9 +21,11 @@
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { delimiter, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { redact } from '../util/redact.js'
-import { entryCommand, nodeSpawnEnv, readManagedPackage, resolveCmdShim } from './binary.js'
+import { entryCommand, isNodeScript, nodeSpawnEnv, readManagedPackage, resolveCmdShim } from './binary.js'
+import { nodeRuntime, splitPath, type NodeRuntimeResult } from './node-runtime.js'
+import { killTree } from './kill.js'
 import { CANONICAL_REGISTRY, normalizeRegistry, type RankedRegistries, type RegistrySelector } from './registry-probe.js'
 import type { KernelDefinition } from './types.js'
 import { npmBaseEnv } from './env.js'
@@ -51,27 +53,65 @@ export interface NpmCommand {
 }
 
 /**
- * npm's CLI entry, run with the current Node. On Windows `npm.cmd` cannot be
- * spawned without a shell (CVE-2024-27980), so its JS entry is resolved.
+ * npm's CLI entry, run with the Node runtime (see node-runtime.ts). On
+ * Windows `npm.cmd` cannot be spawned without a shell (CVE-2024-27980), so
+ * its JS entry is resolved; elsewhere the `npm` link is followed to its JS
+ * entry too, so it never depends on a `node` being on PATH.
  */
-export function resolveNpm(): NpmCommand | undefined {
-  const nodeDir = dirname(process.execPath)
+export function resolveNpm(runtime: NodeRuntimeResult = nodeRuntime(), envPath: string | undefined = process.env.PATH, platform: NodeJS.Platform = process.platform): NpmCommand | undefined {
+  if (!runtime.ok) return undefined
+  const node = runtime.runtime.command
+  const nodeDir = dirname(node)
   const candidates = [join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'), join(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')]
-  for (const file of candidates) if (existsSync(file)) return { command: process.execPath, prefixArgs: [file], description: `npm bundled with ${process.execPath}` }
-  if (process.platform === 'win32') {
-    for (const dir of (process.env.PATH ?? '').split(';').filter(Boolean)) {
+  for (const file of candidates) if (existsSync(file)) return { command: node, prefixArgs: [file], description: `npm bundled with ${node}` }
+  for (const dir of splitPath(envPath, platform)) {
+    if (platform === 'win32') {
       const shim = join(dir, 'npm.cmd')
       if (!existsSync(shim)) continue
       const direct = join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js')
       const entry = existsSync(direct) ? { file: direct, kind: 'node' as const } : resolveCmdShim(shim, { npmPackage: 'npm', bin: 'npm' })
-      if (entry !== undefined) return { ...entryCommand(entry), description: `npm from ${dir}` }
+      if (entry !== undefined) return { ...entryCommand(entry, runtime), description: `npm from ${dir}` }
+      continue
     }
-    return undefined
-  }
-  for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
-    if (existsSync(join(dir, 'npm'))) return { command: join(dir, 'npm'), prefixArgs: [], description: 'npm from PATH' }
+    const link = join(dir, 'npm')
+    if (!existsSync(link)) continue
+    let real = link
+    try {
+      real = realpathSync(link)
+    } catch {
+      /* keep the link */
+    }
+    if (isNodeScript(real)) return { command: node, prefixArgs: [real], description: `npm from ${dir}` }
+    return { command: link, prefixArgs: [], description: 'npm from PATH' }
   }
   return undefined
+}
+
+/**
+ * Directory holding a `node` launcher for package install scripts
+ * (`"postinstall": "node install.cjs"`). Needed only when the runtime is the
+ * Electron app run as Node: there is then no `node` on PATH. The launcher runs
+ * `%npm_node_execpath%` (set by npm to its own runtime), which keeps the app
+ * path, with its spaces and non-ASCII characters, out of the batch file.
+ */
+export function writeNodeLauncher(dir: string, platform: NodeJS.Platform = process.platform): string {
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  if (platform === 'win32') {
+    writeFileSync(join(dir, 'node.cmd'), '@SET ELECTRON_RUN_AS_NODE=1\r\n@"%npm_node_execpath%" %*\r\n')
+  } else {
+    writeFileSync(join(dir, 'node'), '#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec "$npm_node_execpath" "$@"\n', { mode: 0o755 })
+  }
+  return dir
+}
+
+/** `env` with `dir` first on its PATH (whatever the key's case: Windows usually calls it `Path`). */
+export function prependPath(env: Record<string, string>, dir: string, platform: NodeJS.Platform = process.platform): Record<string, string> {
+  const keys = Object.keys(env).filter(key => /^path$/i.test(key))
+  const sep = platform === 'win32' ? ';' : ':'
+  if (keys.length === 0) return { ...env, PATH: dir }
+  const out = { ...env }
+  for (const key of keys) out[key] = env[key] ? `${dir}${sep}${env[key]}` : dir
+  return out
 }
 
 interface LockFile {
@@ -179,7 +219,10 @@ export class KernelInstaller {
     }
     this.update(def.id, { probe })
     const npm = this.options.npm ?? resolveNpm()
-    if (npm === undefined) throw new Error('npm was not found; install Node.js 22+ (with npm)')
+    if (npm === undefined) {
+      const runtime = nodeRuntime()
+      throw new Error(runtime.ok ? 'npm was not found; install Node.js 22+ (with npm) from nodejs.org, then restart DSH' : runtime.problem)
+    }
 
     const canonical = this.canonical
     const canonicalProbe = probe.results.find(r => r.registry === canonical && r.ok && r.satisfies && r.version !== undefined)
@@ -287,15 +330,18 @@ export class KernelInstaller {
     const retries = String(this.options.fetchRetries ?? 1)
     const args = [...npm.prefixArgs, ...command, '--prefix', dir, '--no-audit', '--no-fund', '--no-update-notifier', '--loglevel', 'warn', '--fetch-retries', retries, '--fetch-retry-mintimeout', '2000', '--fetch-retry-maxtimeout', '5000']
     // Allowlisted environment only: step 3 runs the CLI package's own install scripts.
-    const env: Record<string, string> = { ...npmBaseEnv(this.options.env ?? process.env), npm_config_update_notifier: 'false' }
+    let env: Record<string, string> = { ...npmBaseEnv(this.options.env ?? process.env), npm_config_update_notifier: 'false' }
+    // Inside DSH Desktop without a Node.js install, install scripts still find a `node`.
+    if (process.versions.electron !== undefined && npm.command === process.execPath) env = prependPath(env, writeNodeLauncher(join(this.options.installRoot, '.node-launcher')))
     const proxy = this.options.proxy?.()
     if (proxy) env.npm_config_proxy = env.npm_config_https_proxy = proxy
     // A local registry or cache on loopback never goes through a proxy.
     const noProxy = [env.NO_PROXY ?? env.no_proxy ?? '', '127.0.0.1,localhost,::1'].filter(Boolean).join(',')
     env.NO_PROXY = env.no_proxy = env.npm_config_noproxy = noProxy
     return new Promise(resolve => {
-      const child = spawn(npm.command, args, { cwd: dir, env: nodeSpawnEnv(npm.command, env), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
-      const timer = setTimeout(() => child.kill('SIGTERM'), this.options.timeoutMs)
+      const child = spawn(npm.command, args, { cwd: dir, env: nodeSpawnEnv(npm.command, env), windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] })
+      // npm runs install scripts in child processes; end the whole tree.
+      const timer = setTimeout(() => killTree(child.pid, 'SIGTERM'), this.options.timeoutMs)
       const onData = (chunk: Buffer): void => {
         for (const line of chunk.toString('utf8').split(/\r?\n/)) if (line.trim()) this.append(def.id, line.trim())
       }

@@ -18,6 +18,7 @@
  * The script receives `input` (JSON) and returns a JSON-serializable value.
  */
 import { spawn } from 'node:child_process'
+import { nodeRuntime, type NodeRuntimeResult } from '../kernels/node-runtime.js'
 
 const CHILD_SOURCE = `
 'use strict';
@@ -57,18 +58,22 @@ export interface ScriptResult {
   logs: string[]
 }
 
-function childEnv(): Record<string, string> {
+function childEnv(command: string): Record<string, string> {
   const env: Record<string, string> = {}
   if (process.platform === 'win32' && process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot
-  if (process.versions.electron !== undefined) env.ELECTRON_RUN_AS_NODE = '1'
+  if (process.versions.electron !== undefined && command === process.execPath) env.ELECTRON_RUN_AS_NODE = '1'
   return env
 }
 
-export function runScript(code: string, input: unknown, options: { timeoutMs: number; maxHeapMb: number; signal?: AbortSignal }): Promise<ScriptResult> {
+export function runScript(code: string, input: unknown, options: { timeoutMs: number; maxHeapMb: number; signal?: AbortSignal; runtime?: NodeRuntimeResult }): Promise<ScriptResult> {
   if (code.length > 100_000) return Promise.reject(new Error('script too long (max 100000 characters)'))
+  // Inside DSH Desktop process.execPath is the app itself; never spawn it as if it were Node.
+  const runtime = options.runtime ?? nodeRuntime()
+  if (!runtime.ok) return Promise.reject(new Error(`script nodes need Node.js: ${runtime.problem}`))
+  const command = runtime.runtime.command
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--permission', `--max-old-space-size=${Math.max(8, Math.trunc(options.maxHeapMb))}`, '--disallow-code-generation-from-strings', '-e', CHILD_SOURCE], {
-      env: childEnv(),
+    const child = spawn(command, ['--permission', `--max-old-space-size=${Math.max(8, Math.trunc(options.maxHeapMb))}`, '--disallow-code-generation-from-strings', '-e', CHILD_SOURCE], {
+      env: childEnv(command),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     })
@@ -103,7 +108,11 @@ export function runScript(code: string, input: unknown, options: { timeoutMs: nu
         try {
           message = JSON.parse(stdout) as typeof message
         } catch {
-          const detail = /heap|memory/i.test(stderr) ? 'out of memory' : stderr.trim().split('\n').pop() || `exit code ${exitCode ?? 'unknown'}`
+          const detail = /heap|memory/i.test(stderr)
+            ? 'out of memory'
+            : /bad option|unknown option|--permission/i.test(stderr)
+              ? `the Node.js runtime (${command}) does not support the permission model; script nodes need Node.js 22.13 or later`
+              : stderr.trim().split('\n').pop() || `exit code ${exitCode ?? 'unknown'}`
           reject(new Error(`script crashed: ${detail}`))
           return
         }

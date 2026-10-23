@@ -124,6 +124,11 @@ function KernelCard({ kernel, t, test, actions }: { kernel: KernelInfo; t: Trans
           {install.log.length > 0 && <div className="lxf-kcard__logline" title={install.log.at(-1)}>{install.log.at(-1)}</div>}
         </div>
       )}
+      {kernel.problem !== undefined && !busy && (
+        <div className="lxf-callout is-error" role="status">
+          {t('kernels.cannotStart', { message: kernel.problem })}
+        </div>
+      )}
       {install.status === 'error' && (
         <div className="lxf-callout is-error">
           {t('install.error', { message: install.error ?? '' })}

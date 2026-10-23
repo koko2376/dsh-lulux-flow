@@ -365,6 +365,7 @@ export const zh = {
   'kernels.rescan': '重新检测',
   'kernels.loadError': '内核列表加载失败',
   'kernels.installed': '已安装',
+  'kernels.cannotStart': '已找到，但无法启动：{message}',
   'kernels.notInstalled': '未安装',
   'kernels.needs': '需要 {min}',
   'kernels.source': '来源',

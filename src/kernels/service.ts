@@ -38,6 +38,8 @@ export interface KernelInfo {
   /** Permission levels this CLI can enforce; the pickers offer only these. */
   permissions: readonly KernelPermission[]
   installed: boolean
+  /** Found but cannot be started, and why (shown on the Kernels page). */
+  problem?: string
   source?: 'settings' | 'managed' | 'path'
   version?: string
   versionOk: boolean
@@ -91,9 +93,10 @@ export class KernelService {
       supportsApprovalBridge: def.supportsApprovalBridge,
       permissions: supportedPermissions(def),
       installed: binary !== undefined,
+      ...(binary?.problem !== undefined ? { problem: binary.problem } : {}),
       ...(binary !== undefined ? { source: binary.source } : {}),
       ...(version !== undefined ? { version } : {}),
-      versionOk: version !== undefined ? satisfiesMinVersion(version, def.minVersion) : binary !== undefined,
+      versionOk: version !== undefined ? satisfiesMinVersion(version, def.minVersion) : binary !== undefined && binary.problem === undefined,
       nativeLogin: hasNativeLogin(def),
       settings: this.settings.kernel(def.id),
       install: this.installer.state(def.id),

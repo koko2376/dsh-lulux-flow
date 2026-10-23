@@ -367,6 +367,7 @@ export const en = {
   'kernels.rescan': 'Rescan',
   'kernels.loadError': 'Could not load kernels.',
   'kernels.installed': 'Installed',
+  'kernels.cannotStart': 'Found, but cannot be started: {message}',
   'kernels.notInstalled': 'Not installed',
   'kernels.needs': 'needs {min}',
   'kernels.source': 'Source',
