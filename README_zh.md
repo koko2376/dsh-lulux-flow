@@ -135,6 +135,8 @@ CLI 本身按需安装：在 **内核** 页面一键安装，或在设置里指�
 | 每个 CLI：可执行文件路径 | 自动 | 显式指定可执行文件（`.exe`、`.cmd` 或脚本；首尾引号会被忽略）；留空则在插件安装目录、`PATH` 和各 CLI 的常见安装位置中查找。该路径会被执行（包括 `--version`），只指向你信任的程序。 |
 | 镜像源覆盖 | 自动 | 下载 CLI 包用的 npm 镜像（只接受 `https://`；`http://` 仅限 127.0.0.1/localhost）；留空则探测默认源并选最快的。 |
 | 信任镜像 | 关 | registry.npmjs.org 不可达时是否仍允许安装。关：拒绝安装，因为锁文件必须来自 npmjs.org。开：整棵依赖树都信任镜像自己的元数据。 |
+| 自动检查更新 | 跟随插件配置（开） | 启动后稍等片刻检查一次 GitHub Releases，之后每天一次；有新版本时显示一个小提示。 |
+| 更新源 | 跟随插件配置（自动） | `auto` 自动选最快的节点，`official` 只问 GitHub，`mirror` 只问 jsDelivr 镜像（适合访问不了 GitHub 的网络）。 |
 
 **部署级默认值** 写在 profile 的 `cordis.patch.yml` 里插件那一行（`id: dsh-lulux-flow`）。patch 层会整体替换该行的 `config`，所以要把你设置的字段全部写上。
 
@@ -162,6 +164,9 @@ CLI 本身按需安装：在 **内核** 页面一键安装，或在设置里指�
 | `kernelEnvPassthrough` | `[]` | 额外传给作用域模式 CLI 的环境变量名，例如 git over SSH 需要的 `SSH_AUTH_SOCK`。列在这里的变量 CLI 都能看到 |
 | `kernelMaxConcurrent` | `6` | 所有 CLI 同时运行的最大数量（聊天会话、ds-bot 成员、工作流、子代理合计），超出的按先后顺序排队 |
 | `kernelMaxConcurrentPerCli` | `3` | 单个 CLI 同时运行的最大数量，超出的排队 |
+| `updateAutoCheck` | `true` | 启动约 90 秒后检查一次新版本，之后每天一次（界面设置优先） |
+| `updateSource` | `auto` | `auto`、`official`（仅 GitHub）或 `mirror`（仅 jsDelivr）；界面设置优先 |
+| `updateMirrors` | fastly / gcore / testingcf / cdn `.jsdelivr.net` | 与 jsDelivr 兼容的 `https://` 镜像，只用来读取最新版本号 |
 
 子代理工具（`lulux_flow_subagent_claude_code` 等）是同一文件里的独立行，**默认关闭**。开启示例：
 
@@ -169,6 +174,12 @@ CLI 本身按需安装：在 **内核** 页面一键安装，或在设置里指�
 - id: lulux-flow-subagent-claude-code
   disabled: false
 ```
+
+### 检查更新
+
+有新版本发布到 [GitHub Releases](https://github.com/koko2376/dsh-lulux-flow/releases) 时，插件会提示你；它不会自动下载或安装任何东西。提示是 LULUX Flow 页面右上角的一个小标记 **新版本 x.y.z**，点开可以看到当前版本、最新版本和更新内容摘要，以及三个按钮：**查看更新**（打开 GitHub 发布页）、**稍后提醒**（一天内不再显示）、**忽略此版本**（直到出现更新的版本前都不再显示）。画布工具栏的 **更多 → 检查更新**，或 设置 → 更新 里的按钮，会立即检查并提示“已是最新”“有新版本”或“检查失败”。
+
+为了让各地网络都能用，第一次检查会同时询问 GitHub（`api.github.com`、`github.com`）和几个 jsDelivr 镜像，每个最多等 4 秒，之后的检查只用最快的那个；两边都有结果时以 GitHub 为准。系统时区只在速度接近时用来决定先后。镜像只提供版本号，链接始终指向 github.com。插件会连接的全部主机见 [SECURITY.md](SECURITY.md#hosts-the-plugin-contacts)。
 
 ## 安全模型
 

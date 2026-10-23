@@ -35,6 +35,22 @@ All notable changes to this project are documented here. The format follows
   and English descriptions. Extra runs wait in a FIFO queue, show one
   "Queued" line in the chat (or the workflow trace) and can be stopped while
   they wait without starting the CLI.
+- **Update check (notify only).** About 90 s after start and then daily, the
+  plugin asks GitHub Releases whether a newer stable version exists and shows
+  a small badge on the LULUX Flow page with the current and latest version, a
+  plain-text summary of the release notes, **View release** (the GitHub
+  release page), **Remind later** and **Skip this version** (both
+  remembered). **More → Check for updates** and Settings → Updates check on
+  demand and report up to date / new version / check failed. Nothing is
+  downloaded or installed.
+- The check asks `api.github.com`, `github.com` and jsDelivr mirrors in
+  parallel with short timeouts, reuses the kernel-registry probe scoring to
+  keep the fastest node, and prefers GitHub's answer; mirrors supply only a
+  version number and links always point to github.com. Rate limits, offline
+  networks and malformed answers are logged, not shown as errors. New plugin
+  config fields `updateAutoCheck`, `updateSource` (`auto` / `official` /
+  `mirror`) and `updateMirrors`, with matching settings in the UI, and new API
+  routes `GET /api/update`, `POST /api/update/check|skip|remind`.
 
 ### Fixed
 

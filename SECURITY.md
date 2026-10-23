@@ -180,6 +180,38 @@ credentials.
 **Loop guard.** The gateway never forwards to one of the plugin's own
 `lulux-flow-*` model routes, so a CLI cannot be routed to itself.
 
+**Update check (notify only).** The plugin checks whether a newer release
+exists and shows a notice; it never downloads, installs or runs an update.
+Checks run about 90 s after DSH starts, then once a day, and when you choose
+**Check for updates**; turn the automatic check off with the
+**Check for updates automatically** setting or `updateAutoCheck: false` in the
+plugin config. Each check sends only `GET` requests with a
+`User-Agent: dsh-lulux-flow/<version>` header: no cookies, tokens, query
+strings, machine or user identifiers, and no telemetry. Answers are capped at
+512 KB, time out after 4 s, and any failure (offline, HTTP 403/429 rate
+limits, malformed answers) is logged and otherwise ignored; a rate-limited
+GitHub API is not asked again before its reset time. The release body is
+reduced to a few lines of plain text (HTML, links and images are dropped) and
+rendered as text. The only link the notice shows is a release page under
+`https://github.com/koko2376/dsh-lulux-flow/releases`; the Host and the
+browser both check it against that allowlist. Mirrors are trusted for a
+version number only: the link is built locally from that number, and notes
+are never taken from a mirror.
+
+### Hosts the plugin contacts
+
+Apart from the model traffic DSH itself sends to your configured providers,
+the plugin opens outbound connections only to these hosts:
+
+| When | Hosts | What |
+|---|---|---|
+| Update check (`updateSource: auto`, the default) | `api.github.com`, `github.com`, `fastly.jsdelivr.net`, `gcore.jsdelivr.net`, `testingcf.jsdelivr.net`, `cdn.jsdelivr.net` | `GET /repos/koko2376/dsh-lulux-flow/releases/latest`; `GET /koko2376/dsh-lulux-flow/releases/latest` (redirect not followed); `GET /gh/koko2376/dsh-lulux-flow@latest/package.json`. All are asked in parallel on the first check; later checks ask only the fastest one until it fails. `official` asks only the GitHub hosts, `mirror` only the jsDelivr hosts (or the `updateMirrors` you configure). |
+| Installing or probing a CLI (Kernels page) | `registry.npmjs.org`, `registry.npmmirror.com`, `mirrors.cloud.tencent.com`, `repo.huaweicloud.com` (or your `registries` / registry override) | npm metadata and tarballs |
+| A workflow's HTTP or notify node | The URLs you put in the node | Subject to the SSRF guard above |
+
+A CLI you run (in either mode) makes its own network connections; see
+*Residual risks*.
+
 ### Script nodes are not a sandbox
 
 Script nodes are **off by default** and can only be enabled by the operator

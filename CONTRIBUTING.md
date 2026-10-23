@@ -129,6 +129,20 @@ By making a contribution to this project, I certify that:
     this project or the open source license(s) involved.
 ```
 
+## Releasing (maintainers)
+
+The update check reads GitHub Releases, so a release is what users are told
+about:
+
+1. Tag the release commit `vX.Y.Z` (valid semver; the `version` in
+   `package.json` at that tag must be `X.Y.Z`) and publish a GitHub release
+   from it. Mark test builds as pre-releases: the stable check ignores them.
+2. Start the release body with a short summary; the first lines (plain text,
+   up to about 600 characters) are what the in-app notice shows.
+3. jsDelivr caches `@latest` for up to 7 days. Purge it so users on the mirror
+   nodes see the release within minutes:
+   `curl https://purge.jsdelivr.net/gh/koko2376/dsh-lulux-flow@latest/package.json`
+
 ## License
 
 By contributing you agree that your contributions are licensed under the

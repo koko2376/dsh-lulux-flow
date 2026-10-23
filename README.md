@@ -212,6 +212,8 @@ one for a Bot in its settings or the Create Bot form; nothing else is needed.
 | Per CLI: binary path | auto | Explicit executable (`.exe`, `.cmd`, a script; surrounding quotes are ignored); empty searches the plugin's install dir, `PATH` and the CLIs' usual install locations. This path is executed (also for `--version`), so only point it at programs you trust. |
 | Registry override | auto | npm mirror for CLI tarballs (`https://` only; `http://` only for 127.0.0.1/localhost); empty probes the defaults and picks the fastest. |
 | Trust mirror | off | Allow installs when registry.npmjs.org is unreachable. Off: the install is refused, because the lockfile must come from npmjs.org. On: the mirror's own metadata is trusted for the whole tree. |
+| Check for updates automatically | plugin config (on) | Check GitHub Releases shortly after start and then daily, and show a small notice when a newer version exists. |
+| Update source | plugin config (auto) | `auto` picks the fastest node, `official` asks GitHub only, `mirror` asks the jsDelivr mirrors only (for networks that cannot reach GitHub). |
 
 **Deployment defaults** live in the plugin row of your profile's
 `cordis.patch.yml` (`id: dsh-lulux-flow`). Patch layers replace a row's
@@ -241,6 +243,9 @@ one for a Bot in its settings or the Create Bot form; nothing else is needed.
 | `kernelEnvPassthrough` | `[]` | Extra variable names passed to scoped CLIs, e.g. `SSH_AUTH_SOCK` for git over SSH. Anything listed is visible to the CLI |
 | `kernelMaxConcurrent` | `6` | CLI runs at once across all CLIs (chat sessions, ds-bot members, workflows, subagents); further runs wait in a FIFO queue |
 | `kernelMaxConcurrentPerCli` | `3` | CLI runs at once of any one CLI; further runs of that CLI wait in the queue |
+| `updateAutoCheck` | `true` | Check for a newer release about 90 s after start, then daily (the UI setting overrides this) |
+| `updateSource` | `auto` | `auto`, `official` (GitHub only) or `mirror` (jsDelivr only); the UI setting overrides this |
+| `updateMirrors` | fastly / gcore / testingcf / cdn `.jsdelivr.net` | jsDelivr-compatible `https://` mirrors asked for the latest version number |
 
 The subagent tools (`lulux_flow_subagent_claude_code`, …) are separate rows in
 the same file and are **off by default**. Enable one with:
@@ -249,6 +254,26 @@ the same file and are **off by default**. Enable one with:
 - id: lulux-flow-subagent-claude-code
   disabled: false
 ```
+
+### Update check
+
+The plugin tells you when a newer version is on
+[GitHub Releases](https://github.com/koko2376/dsh-lulux-flow/releases); it
+never downloads or installs anything. A small **New x.y.z** badge appears at
+the top right of the LULUX Flow page; it shows the current and latest
+version, a short summary of the release notes and three buttons: **View
+release** (opens the GitHub release page), **Remind later** (hides it for a
+day) and **Skip this version** (hides it until a newer version comes out).
+**More → Check for updates** in the canvas toolbar, or the button under
+Settings → Updates, checks right away and reports "up to date", "new version"
+or "check failed".
+
+To serve every network, the first check asks GitHub (`api.github.com`,
+`github.com`) and several jsDelivr mirrors in parallel with a 4 s timeout and
+keeps the fastest one for later checks; if both answer, GitHub's answer wins.
+The system time zone only breaks near-ties. Mirrors only supply a version
+number, and the link always points to github.com. See
+[SECURITY.md](SECURITY.md#hosts-the-plugin-contacts) for every host contacted.
 
 ## Security model
 
