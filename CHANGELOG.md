@@ -52,6 +52,9 @@ All notable changes to this project are documented here. The format follows
   under "Advanced settings" and "Connections", and an "Insert variable" picker
   replaces typing `{{ … }}` by hand. A first-time empty state explains the
   three steps to a first run.
+- The workflow list and the inspector can be collapsed, and resized by
+  dragging their inner edge (double-click resets). Widths and collapsed state
+  are remembered.
 - The npm package includes the TypeScript sources (`src/`, `client/src/`).
 
 ## [0.1.0] - 2026-10-23
