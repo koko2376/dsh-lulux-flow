@@ -6,9 +6,9 @@
 import { useMemo, useState, type ReactElement } from 'react'
 import { exceeds, permissionsFor, routesFor, type KernelPermission, type EdgeRoute, type KernelInfo, type LintIssue, type Workflow, type WorkflowInputSpec, type WorkflowNode } from '../api/types.ts'
 import type { Translate } from '../i18n/translate.ts'
-import { templateVariables } from '../store/graph.ts'
+import { templateVariables, variableOptions, type VariableOption } from '../store/graph.ts'
 import { avatarFor } from '../ui/avatars.ts'
-import { Avatar, Badge, Button, Field, IconButton, Switch, cx } from '../ui/glass.tsx'
+import { Avatar, Badge, Button, Disclosure, Field, IconButton, Switch, cx } from '../ui/glass.tsx'
 import { IconPlus, IconTrash, IconWarning, NodeIcons } from '../ui/icons.tsx'
 import { issueText } from './Canvas.tsx'
 import { TemplateField } from './TemplateField.tsx'
@@ -95,6 +95,11 @@ function NumberInput({ id, value, onChange, min, max, step, describedBy }: { id:
 export function Inspector(props: InspectorProps): ReactElement {
   const { workflow, node, issues, kernels, scriptsAllowed, t } = props
   const vars = useMemo(() => templateVariables(workflow, node.id), [workflow, node.id])
+  const options = useMemo(() => variableOptions(workflow, node.id, t as (key: string, params?: Record<string, string | number>) => string), [workflow, node.id, t])
+  const pickerText = useMemo(
+    () => ({ insert: t('inspector.insertVar'), none: t('inspector.vars.none'), groups: { inputs: t('inspector.vars.inputs'), nodes: t('inspector.vars.nodes'), loop: t('inspector.vars.loop'), run: t('inspector.vars.run') } }),
+    [t],
+  )
   const c = node.config
   const set = (key: string, value: unknown): void => {
     const config = { ...node.config }
@@ -112,6 +117,8 @@ export function Inspector(props: InspectorProps): ReactElement {
           value={s(c[key])}
           onChange={v => set(key, v)}
           variables={vars}
+          options={options}
+          pickerText={pickerText}
           {...(opts.multiline ? { multiline: true } : {})}
           {...(opts.rows ? { rows: opts.rows } : {})}
           {...(opts.placeholder ? { placeholder: opts.placeholder } : {})}
@@ -137,6 +144,9 @@ export function Inspector(props: InspectorProps): ReactElement {
   const overCeiling =
     kernelInfo !== undefined && ((c.permission !== undefined && exceeds(permissionValue, kernelInfo.settings.permission)) || (c.mode === 'global' && kernelInfo.settings.mode !== 'global'))
   const Icon = NodeIcons[node.type]
+  // Open "Advanced settings" when something in it is already set, so nothing configured is out of sight.
+  const ADVANCED_KEYS: Record<string, readonly string[]> = { agent: ['system', 'model', 'preset', 'cwd', 'parseJson'], kernel: ['mode', 'model', 'cwd', 'parseJson'], http: ['headers', 'expectStatus'], notify: ['headers'], approval: ['timeoutMs', 'onTimeout'], loop: ['maxIterations'] }
+  const hasAdvanced = (node.retry?.max ?? 0) > 0 || node.timeoutMs !== undefined || node.continueOnFailure === true || (ADVANCED_KEYS[node.type] ?? []).some(key => c[key] !== undefined)
   const executable = !['input', 'output'].includes(node.type)
   const routes = routesFor(node.type)
   const targets = workflow.nodes.filter(n => n.id !== node.id && n.type !== 'input')
@@ -169,24 +179,14 @@ export function Inspector(props: InspectorProps): ReactElement {
       )}
 
       <section className="lxf-section" aria-label={t('inspector.general')}>
+        <p className="lxf-inspector__what">{t(`node.desc.${node.type}` as never)}</p>
         <Field label={t('inspector.name')}>{id => <input id={id} className="lxf-input" maxLength={120} value={node.name} onChange={e => props.onChange({ ...node, name: e.target.value })} />}</Field>
 
         {node.type === 'input' && <InputsEditor t={t} inputs={workflow.inputs ?? []} onChange={inputs => props.onWorkflowChange(wf => ({ ...wf, inputs }))} />}
 
-        {node.type === 'output' && template('value', t('inspector.output.value'), { multiline: true, rows: 3, placeholder: '{{ nodes.agent.output }}', hint: t('inspector.output.hint') })}
+        {node.type === 'output' && template('value', t('inspector.output.value'), { multiline: true, rows: 3, placeholder: t('inspector.output.placeholder'), hint: t('inspector.output.hint') })}
 
-        {node.type === 'agent' && (
-          <>
-            {template('prompt', t('inspector.prompt'), { multiline: true, rows: 6, placeholder: t('inspector.prompt.placeholder') })}
-            {template('system', t('inspector.system'), { multiline: true, rows: 3 })}
-            <div className="lxf-grid2">
-              {template('model', t('inspector.model'), { placeholder: 'provider/model' })}
-              {literal('preset', t('inspector.preset'))}
-            </div>
-            {literal('cwd', t('inspector.cwd'))}
-            <ToggleRow label={t('inspector.parseJson')} checked={c.parseJson !== false} onChange={v => set('parseJson', v ? undefined : false)} />
-          </>
-        )}
+        {node.type === 'agent' && template('prompt', t('inspector.prompt'), { multiline: true, rows: 6, placeholder: t('inspector.prompt.placeholder') })}
 
         {node.type === 'kernel' && (
           <>
@@ -210,25 +210,9 @@ export function Inspector(props: InspectorProps): ReactElement {
               </div>
             </fieldset>
             {template('prompt', t('inspector.prompt'), { multiline: true, rows: 6, placeholder: t('inspector.prompt.placeholder') })}
-            <div className="lxf-grid2">
-              <Field label={t('inspector.permission')}>
-                {id => <Select id={id} value={permissionValue} options={permissionOptions} onChange={v => set('permission', v)} />}
-              </Field>
-              <Field label={t('inspector.mode')}>
-                {id => (
-                  <Select
-                    id={id}
-                    value={s(c.mode) || 'default'}
-                    options={[
-                      { value: 'default', label: t('inspector.mode.default') },
-                      { value: 'scoped', label: t('mode.scoped') },
-                      { value: 'global', label: t('mode.global') },
-                    ]}
-                    onChange={v => set('mode', v === 'default' ? undefined : v)}
-                  />
-                )}
-              </Field>
-            </div>
+            <Field label={t('inspector.permission')}>
+              {id => <Select id={id} value={permissionValue} options={permissionOptions} onChange={v => set('permission', v)} />}
+            </Field>
             <p className={cx('lxf-field__hint', overCeiling && 'is-warn')} role={overCeiling ? 'status' : undefined}>
               {overCeiling && <IconWarning size={13} />}{' '}
               {kernelInfo
@@ -236,12 +220,6 @@ export function Inspector(props: InspectorProps): ReactElement {
                 : t('inspector.kernel.ceilingAny')}
             </p>
             {c.permission === 'full' && <div className="lxf-callout is-warn">{t('permission.fullWarning')}</div>}
-            <div className="lxf-grid2">
-              {template('model', t('inspector.model'), { placeholder: 'provider/model' })}
-              {literal('cwd', t('inspector.cwd'))}
-            </div>
-            <p className="lxf-field__hint">{t('inspector.kernel.literal')}</p>
-            <ToggleRow label={t('inspector.parseJson')} checked={c.parseJson !== false} onChange={v => set('parseJson', v ? undefined : false)} />
           </>
         )}
 
@@ -260,11 +238,7 @@ export function Inspector(props: InspectorProps): ReactElement {
               </Field>
               {template('url', t('inspector.url'), { placeholder: 'https://' })}
             </div>
-            <Field label={t('inspector.headers')} hint={t('inspector.json.hint')}>
-              {(id, hint) => <JsonField id={id} label={t('inspector.headers')} value={c.headers} onChange={v => set('headers', v)} t={t} describedBy={hint} />}
-            </Field>
             {template('body', t('inspector.body'), { multiline: true, rows: 4, mono: true })}
-            <Field label={t('inspector.expectStatus')}>{id => <NumberInput id={id} value={c.expectStatus as number | undefined} min={100} max={599} onChange={v => set('expectStatus', v)} />}</Field>
           </>
         )}
 
@@ -285,8 +259,7 @@ export function Inspector(props: InspectorProps): ReactElement {
             {(s(c.mode) || 'items') === 'items' && template('items', t('inspector.loop.itemsField'), { placeholder: '{{ nodes.list.output.items }}' })}
             {s(c.mode) === 'count' && template('count', t('inspector.loop.countField'))}
             {s(c.mode) === 'until' && template('until', t('inspector.loop.untilField'), { mono: true, placeholder: 'loop.previous.done == true' })}
-            <Field label={t('inspector.loop.max')}>{id => <NumberInput id={id} value={Number(c.maxIterations ?? 10)} min={1} max={100} onChange={v => set('maxIterations', v)} />}</Field>
-            <LoopBody t={t} body={(c.body ?? { type: 'agent', config: {} }) as { type: string; config?: Record<string, unknown> }} vars={vars} kernels={kernels} onChange={body => set('body', body)} />
+            <LoopBody t={t} body={(c.body ?? { type: 'agent', config: {} }) as { type: string; config?: Record<string, unknown> }} vars={vars} options={options} kernels={kernels} onChange={body => set('body', body)} />
           </>
         )}
 
@@ -294,6 +267,67 @@ export function Inspector(props: InspectorProps): ReactElement {
           <>
             <p className="lxf-field__hint">{t('inspector.approval.hint')}</p>
             {template('message', t('inspector.approval.message'), { multiline: true, rows: 3 })}
+          </>
+        )}
+
+        {node.type === 'notify' && (
+          <>
+            {template('url', t('inspector.notify.url'), { placeholder: 'https://hooks.example.com/…' })}
+            <Field label={t('inspector.notify.format')}>
+              {id => <Select id={id} value={s(c.format) || 'json'} options={['json', 'slack', 'feishu', 'dingtalk', 'wecom', 'discord'].map(f => ({ value: f, label: t(`notify.${f}` as never) }))} onChange={v => set('format', v)} />}
+            </Field>
+            {template('message', t('inspector.notify.message'), { multiline: true, rows: 3 })}
+          </>
+        )}
+      </section>
+
+      {executable && (
+        <Disclosure title={t('inspector.advanced')} hint={t('inspector.advanced.hint')} defaultOpen={hasAdvanced}>
+          {node.type === 'agent' && (
+            <>
+              {template('system', t('inspector.system'), { multiline: true, rows: 3 })}
+              <div className="lxf-grid2">
+                {template('model', t('inspector.model'), { placeholder: 'provider/model' })}
+                {literal('preset', t('inspector.preset'))}
+              </div>
+              {literal('cwd', t('inspector.cwd'))}
+              <ToggleRow label={t('inspector.parseJson')} checked={c.parseJson !== false} onChange={v => set('parseJson', v ? undefined : false)} />
+            </>
+          )}
+          {node.type === 'kernel' && (
+            <>
+              <Field label={t('inspector.mode')}>
+                {id => (
+                  <Select
+                    id={id}
+                    value={s(c.mode) || 'default'}
+                    options={[
+                      { value: 'default', label: t('inspector.mode.default') },
+                      { value: 'scoped', label: t('mode.scoped') },
+                      { value: 'global', label: t('mode.global') },
+                    ]}
+                    onChange={v => set('mode', v === 'default' ? undefined : v)}
+                  />
+                )}
+              </Field>
+              <div className="lxf-grid2">
+                {template('model', t('inspector.model'), { placeholder: 'provider/model' })}
+                {literal('cwd', t('inspector.cwd'))}
+              </div>
+              <p className="lxf-field__hint">{t('inspector.kernel.literal')}</p>
+              <ToggleRow label={t('inspector.parseJson')} checked={c.parseJson !== false} onChange={v => set('parseJson', v ? undefined : false)} />
+            </>
+          )}
+          {node.type === 'http' && (
+            <>
+              <Field label={t('inspector.headers')} hint={t('inspector.json.hint')}>
+                {(id, hint) => <JsonField id={id} label={t('inspector.headers')} value={c.headers} onChange={v => set('headers', v)} t={t} describedBy={hint} />}
+              </Field>
+              <Field label={t('inspector.expectStatus')}>{id => <NumberInput id={id} value={c.expectStatus as number | undefined} min={100} max={599} onChange={v => set('expectStatus', v)} />}</Field>
+            </>
+          )}
+          {node.type === 'loop' && <Field label={t('inspector.loop.max')}>{id => <NumberInput id={id} value={Number(c.maxIterations ?? 10)} min={1} max={100} onChange={v => set('maxIterations', v)} />}</Field>}
+          {node.type === 'approval' && (
             <div className="lxf-grid2">
               <Field label={t('inspector.approval.timeout')}>{id => <NumberInput id={id} value={c.timeoutMs ? Number(c.timeoutMs) / 60000 : undefined} min={0} onChange={v => set('timeoutMs', v ? Math.round(v * 60000) : undefined)} />}</Field>
               <Field label={t('inspector.approval.onTimeout')}>
@@ -310,25 +344,13 @@ export function Inspector(props: InspectorProps): ReactElement {
                 )}
               </Field>
             </div>
-          </>
-        )}
-
-        {node.type === 'notify' && (
-          <>
-            {template('url', t('inspector.notify.url'), { placeholder: 'https://hooks.example.com/…' })}
-            <Field label={t('inspector.notify.format')}>
-              {id => <Select id={id} value={s(c.format) || 'json'} options={['json', 'slack', 'feishu', 'dingtalk', 'wecom', 'discord'].map(f => ({ value: f, label: t(`notify.${f}` as never) }))} onChange={v => set('format', v)} />}
-            </Field>
-            {template('message', t('inspector.notify.message'), { multiline: true, rows: 3 })}
+          )}
+          {node.type === 'notify' && (
             <Field label={t('inspector.headers')} hint={t('inspector.json.hint')}>
               {(id, hint) => <JsonField id={id} label={t('inspector.headers')} value={c.headers} onChange={v => set('headers', v)} t={t} describedBy={hint} />}
             </Field>
-          </>
-        )}
-      </section>
+          )}
 
-      {executable && (
-        <section className="lxf-section" aria-labelledby={`${node.id}-policy`}>
           <h3 id={`${node.id}-policy`} className="lxf-section__title">
             {t('inspector.policy')}
           </h3>
@@ -383,14 +405,11 @@ export function Inspector(props: InspectorProps): ReactElement {
               props.onChange(v ? { ...rest, continueOnFailure: true } : rest)
             }}
           />
-        </section>
+        </Disclosure>
       )}
 
       {routes.length > 0 && targets.length > 0 && (
-        <section className="lxf-section" aria-labelledby={`${node.id}-connect`}>
-          <h3 id={`${node.id}-connect`} className="lxf-section__title">
-            {t('inspector.connections')}
-          </h3>
+        <Disclosure title={t('inspector.connections')} hint={t('inspector.connections.hint')}>
           {routes.map(route => {
             const existing = workflow.edges.filter(e => e.source === node.id && (e.route ?? (node.type === 'condition' ? 'true' : 'success')) === route)
             return (
@@ -423,7 +442,7 @@ export function Inspector(props: InspectorProps): ReactElement {
               </div>
             )
           })}
-        </section>
+        </Disclosure>
       )}
     </div>
   )
@@ -441,7 +460,8 @@ function ToggleRow({ label, hint, checked, onChange }: { label: string; hint?: s
   )
 }
 
-function LoopBody({ t, body, vars, kernels, onChange }: { t: Translate; body: { type: string; config?: Record<string, unknown> }; vars: readonly string[]; kernels: readonly KernelInfo[]; onChange: (b: { type: string; config: Record<string, unknown> }) => void }): ReactElement {
+function LoopBody({ t, body, vars, options, kernels, onChange }: { t: Translate; body: { type: string; config?: Record<string, unknown> }; vars: readonly string[]; options: readonly VariableOption[]; kernels: readonly KernelInfo[]; onChange: (b: { type: string; config: Record<string, unknown> }) => void }): ReactElement {
+  const pickerText = { insert: t('inspector.insertVar'), none: t('inspector.vars.none'), groups: { inputs: t('inspector.vars.inputs'), nodes: t('inspector.vars.nodes'), loop: t('inspector.vars.loop'), run: t('inspector.vars.run') } }
   const config = body.config ?? {}
   const setCfg = (key: string, value: unknown): void => onChange({ type: body.type, config: { ...config, [key]: value } })
   return (
@@ -457,7 +477,7 @@ function LoopBody({ t, body, vars, kernels, onChange }: { t: Translate; body: { 
       )}
       {(body.type === 'agent' || body.type === 'kernel') && (
         <Field label={t('inspector.prompt')}>
-          {id => <TemplateField id={id} label={t('inspector.prompt')} listLabel={t('inspector.variables')} value={s(config.prompt)} onChange={v => setCfg('prompt', v)} variables={vars} multiline rows={4} />}
+          {id => <TemplateField id={id} label={t('inspector.prompt')} listLabel={t('inspector.variables')} value={s(config.prompt)} onChange={v => setCfg('prompt', v)} variables={vars} options={options} pickerText={pickerText} multiline rows={4} />}
         </Field>
       )}
       {body.type === 'script' && (
@@ -467,7 +487,7 @@ function LoopBody({ t, body, vars, kernels, onChange }: { t: Translate; body: { 
       )}
       {body.type === 'http' && (
         <Field label={t('inspector.url')}>
-          {id => <TemplateField id={id} label={t('inspector.url')} listLabel={t('inspector.variables')} value={s(config.url)} onChange={v => setCfg('url', v)} variables={vars} />}
+          {id => <TemplateField id={id} label={t('inspector.url')} listLabel={t('inspector.variables')} value={s(config.url)} onChange={v => setCfg('url', v)} variables={vars} options={options} pickerText={pickerText} />}
         </Field>
       )}
     </fieldset>

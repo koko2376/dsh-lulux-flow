@@ -91,7 +91,8 @@ export interface FlowActions {
   setView(view: View): void
   refreshWorkflows(): Promise<void>
   openWorkflow(id: string): Promise<void>
-  newWorkflow(name: string): Promise<void>
+  /** `names`: display names for the starter input and output steps (localized by the caller). */
+  newWorkflow(name: string, names?: { input: string; output: string }): Promise<void>
   closeWorkflow(): void
   updateWorkflow(update: (wf: Workflow) => Workflow): void
   select(selection: Selection): void
@@ -277,15 +278,15 @@ export function createFlowController(api: FlowApi, options: { pollMs?: number } 
         fail('toast.openFailed', error)
       }
     },
-    async newWorkflow(name) {
+    async newWorkflow(name, names) {
       try {
         const now = new Date().toISOString()
         const detail = await api.createWorkflow({
           schemaVersion: 1,
           name,
           nodes: [
-            { id: 'input', type: 'input', name: 'Input', position: { x: 80, y: 160 }, config: {} },
-            { id: 'output', type: 'output', name: 'Output', position: { x: 520, y: 160 }, config: {} },
+            { id: 'input', type: 'input', name: names?.input ?? 'Input', position: { x: 80, y: 160 }, config: {} },
+            { id: 'output', type: 'output', name: names?.output ?? 'Output', position: { x: 520, y: 160 }, config: {} },
           ],
           edges: [{ id: 'e_input_output', source: 'input', target: 'output', route: 'success' }],
           createdAt: now,

@@ -59,6 +59,9 @@ export const FlowNode = memo(function FlowNode({ data, selected }: NodeProps<Flo
   const Icon = NodeIcons[node.type]
   const routes = routesFor(node.type)
   const sub = subtitle(node, t)
+  // A step that is not configured yet says in plain words what it is for.
+  const hint = sub ? '' : t(`node.desc.${node.type}` as never)
+  const typeLabel = t(`node.type.${node.type}` as never)
   const statusLabel = status ? t(`status.${status}` as never) : undefined
   return (
     <div
@@ -73,11 +76,12 @@ export const FlowNode = memo(function FlowNode({ data, selected }: NodeProps<Flo
         </span>
         <span className="lxf-node__titles">
           <span className="lxf-node__name">{node.name || node.id}</span>
-          <span className="lxf-node__type">{t(`node.type.${node.type}` as never)}</span>
+          {(node.name || node.id) !== typeLabel && <span className="lxf-node__type">{typeLabel}</span>}
         </span>
         {status && <span className={cx('lxf-node__status', `is-${status}`)} title={statusLabel} aria-hidden="true" />}
       </div>
       {sub && <div className="lxf-node__sub">{sub}</div>}
+      {hint && <div className="lxf-node__hint">{hint}</div>}
       {(node.retry?.max ?? 0) > 0 || node.timeoutMs || node.continueOnFailure ? (
         <div className="lxf-node__chips">
           {(node.retry?.max ?? 0) > 0 && <span className="lxf-chip">{t('node.chip.retry', { count: node.retry!.max })}</span>}

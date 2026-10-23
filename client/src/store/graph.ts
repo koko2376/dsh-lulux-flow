@@ -173,4 +173,32 @@ export function templateVariables(workflow: Workflow, nodeId?: string): string[]
   return vars
 }
 
+export interface VariableOption {
+  /** Template path, inserted as `{{ value }}`. */
+  value: string
+  /** Plain-language name shown in the picker. */
+  label: string
+  group: 'inputs' | 'nodes' | 'loop' | 'run'
+}
+
+/**
+ * The variables a node can use, named the way people think of them
+ * ("Result of “Review”") so nobody has to type `{{ nodes.review.output }}`.
+ * `t` receives the i18n key and its parameters.
+ */
+export function variableOptions(workflow: Workflow, nodeId: string | undefined, t: (key: string, params?: Record<string, string | number>) => string): VariableOption[] {
+  const out: VariableOption[] = []
+  for (const input of workflow.inputs ?? []) if (input.name) out.push({ value: `inputs.${input.name}`, label: t('inspector.var.input', { name: input.name }), group: 'inputs' })
+  for (const node of workflow.nodes) {
+    if (node.id === nodeId || node.type === 'output') continue
+    const name = node.name || node.id
+    out.push({ value: `nodes.${node.id}.output`, label: t('inspector.var.output', { name }), group: 'nodes' })
+    out.push({ value: `nodes.${node.id}.error`, label: t('inspector.var.error', { name }), group: 'nodes' })
+  }
+  const self = workflow.nodes.find(n => n.id === nodeId)
+  if (self?.type === 'loop') for (const key of ['item', 'index', 'previous']) out.push({ value: `loop.${key}`, label: t(`inspector.var.loop.${key}`), group: 'loop' })
+  for (const key of ['id', 'workflowId', 'trigger']) out.push({ value: `run.${key}`, label: t(`inspector.var.run.${key}`), group: 'run' })
+  return out
+}
+
 export const TEMPLATE_FILTERS = ['json', 'default("")', 'trim', 'upper', 'lower', 'length'] as const

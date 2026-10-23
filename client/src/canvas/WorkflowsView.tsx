@@ -10,7 +10,7 @@ import { RunHistory } from '../runs/RunHistory.tsx'
 import { RunInspector } from '../runs/RunInspector.tsx'
 import { Badge, Button, Empty, IconButton, Popover, Segmented, Spinner, cx } from '../ui/glass.tsx'
 import { BRAND_AVATAR } from '../ui/avatars.ts'
-import { IconCheck, IconClock, IconShield, IconDownload, IconHistory, IconLayout, IconPlay, IconPlus, IconSave, IconSearch, IconSparkles, IconTrash, IconSidebar, IconUpload, IconWarning, NodeIcons } from '../ui/icons.tsx'
+import { IconCheck, IconChevronDown, IconClock, IconShield, IconDownload, IconHistory, IconLayout, IconPlay, IconPlus, IconSave, IconSearch, IconSparkles, IconTrash, IconSidebar, IconUpload, IconWarning } from '../ui/icons.tsx'
 import { Canvas, issueText } from './Canvas.tsx'
 import { EdgeInspector } from './EdgeInspector.tsx'
 import { GenerateDialog, ImportDialog, RunDialog, TriggersDialog } from './dialogs.tsx'
@@ -39,6 +39,8 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
   const [dialog, setDialog] = useState<null | 'generate' | 'import' | 'run' | 'triggers'>(null)
   const [tab, setTab] = useState<PanelTab>('inspect')
   const [issuesOpen, setIssuesOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreBtn = useRef<HTMLButtonElement | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [listOpen, setListOpen] = useState(true)
   const issuesBtn = useRef<HTMLButtonElement | null>(null)
@@ -59,6 +61,8 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
   const canRun = errors === 0 && !unreviewed
   const runTitle = unreviewed ? t('review.approveFirst') : errors > 0 ? t('toolbar.fixFirst') : undefined
   const startRun = (): void => ((wf?.inputs?.length ?? 0) > 0 ? setDialog('run') : void actions.run({}).then(() => setTab('run')))
+
+  const create = (): void => void actions.newWorkflow(t('workflows.untitled'), { input: t('node.type.input'), output: t('node.type.output') })
 
   const addNode = (type: NodeType, position?: { x: number; y: number }): void => {
     actions.addNode(type, position ?? centre.current(), t(`node.type.${type}` as never))
@@ -81,7 +85,7 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
       <aside className="lxf-glass lxf-sidebar" aria-label={t('workflows.list')} hidden={!listOpen && wf !== null}>
         <div className="lxf-sidebar__head">
           <h2 className="lxf-sidebar__title">{t('workflows.title')}</h2>
-          <IconButton label={t('workflows.new')} icon={<IconPlus />} variant="glass" onClick={() => void actions.newWorkflow(t('workflows.untitled'))} />
+          <IconButton label={t('workflows.new')} icon={<IconPlus />} variant="glass" onClick={create} />
         </div>
         <label className="lxf-search">
           <IconSearch size={14} />
@@ -145,13 +149,25 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
             title={t('canvas.emptyTitle')}
             detail={t('canvas.emptyDetail')}
             action={
-              <div className="lxf-row">
-                <Button variant="primary" icon={<IconPlus />} onClick={() => void actions.newWorkflow(t('workflows.untitled'))}>
-                  {t('workflows.new')}
-                </Button>
-                <Button icon={<IconSparkles />} onClick={() => setDialog('generate')}>
-                  {t('workflows.generate')}
-                </Button>
+              <div className="lxf-empty__start">
+                <ol className="lxf-steps">
+                  {(['canvas.step1', 'canvas.step2', 'canvas.step3'] as const).map((key, i) => (
+                    <li key={key} className="lxf-steps__item">
+                      <span className="lxf-steps__num" aria-hidden="true">
+                        {i + 1}
+                      </span>
+                      <span>{t(key)}</span>
+                    </li>
+                  ))}
+                </ol>
+                <div className="lxf-row">
+                  <Button variant="primary" icon={<IconPlus />} onClick={create}>
+                    {t('workflows.new')}
+                  </Button>
+                  <Button icon={<IconSparkles />} onClick={() => setDialog('generate')}>
+                    {t('workflows.generate')}
+                  </Button>
+                </div>
               </div>
             }
           />
@@ -174,18 +190,58 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
                 {errors + warnings === 0 ? <IconCheck size={14} /> : <IconWarning size={14} />}
                 {errors + warnings === 0 ? t('toolbar.valid') : t('toolbar.issues', { errors, warnings })}
               </button>
-              <IconButton label={t('toolbar.layout')} icon={<IconLayout />} onClick={actions.layout} />
-              <IconButton label={t('toolbar.triggers')} icon={<IconClock />} onClick={() => setDialog('triggers')} />
-              <IconButton label={t('toolbar.export')} icon={<IconDownload />} onClick={() => void download()} />
-              <IconButton label={t('toolbar.history')} icon={<IconHistory />} aria-pressed={tab === 'history'} onClick={() => setTab(tab === 'history' ? 'inspect' : 'history')} />
+              <button
+                ref={moreBtn}
+                type="button"
+                className="lxf-toolbar__more"
+                aria-haspopup="menu"
+                aria-expanded={moreOpen}
+                title={t('toolbar.more')}
+                onClick={() => setMoreOpen(o => !o)}
+              >
+                {t('toolbar.more')}
+                <IconChevronDown size={13} />
+              </button>
               <span className="lxf-toolbar__sep" aria-hidden="true" />
-              <Button size="sm" icon={<IconSave />} onClick={() => void actions.save()} disabled={!dirty || editor.saving} aria-busy={editor.saving}>
+              <Button size="sm" icon={<IconSave />} title={t('toolbar.save.hint')} onClick={() => void actions.save()} disabled={!dirty || editor.saving} aria-busy={editor.saving}>
                 {t('toolbar.save')}
               </Button>
-              <Button size="sm" variant="primary" icon={<IconPlay />} disabled={!canRun} title={runTitle} onClick={startRun}>
+              <Button size="sm" variant="primary" icon={<IconPlay />} disabled={!canRun} title={runTitle ?? t('toolbar.run.hint')} onClick={startRun}>
                 {t('toolbar.run')}
               </Button>
             </div>
+            <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchor={moreBtn} label={t('toolbar.more')} align="end" width={290}>
+              <ul className="lxf-menu" role="menu" aria-label={t('toolbar.more')}>
+                {(
+                  [
+                    { key: 'layout', icon: <IconLayout />, run: actions.layout },
+                    { key: 'triggers', icon: <IconClock />, run: () => setDialog('triggers') },
+                    { key: 'history', icon: <IconHistory />, run: () => setTab('history') },
+                    { key: 'export', icon: <IconDownload />, run: () => void download() },
+                  ] as const
+                ).map(item => (
+                  <li key={item.key} role="none">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="lxf-menu__item"
+                      onClick={() => {
+                        setMoreOpen(false)
+                        item.run()
+                      }}
+                    >
+                      <span className="lxf-menu__icon" aria-hidden="true">
+                        {item.icon}
+                      </span>
+                      <span className="lxf-menu__text">
+                        <span className="lxf-menu__label">{t(`toolbar.${item.key}` as never)}</span>
+                        <span className="lxf-menu__hint">{t(`toolbar.${item.key}.hint` as never)}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Popover>
             <Popover open={issuesOpen} onClose={() => setIssuesOpen(false)} anchor={issuesBtn} label={t('issues.title')} width={340}>
               {issues.length === 0 ? (
                 <p className="lxf-muted lxf-pad">{t('issues.none')}</p>
@@ -309,20 +365,6 @@ export function WorkflowsView({ t, locale, useFlow, actions }: WorkflowsViewProp
               />
             )}
           </div>
-          {tab === 'inspect' && !selectedNode && !selectedEdge && (
-            <div className="lxf-panel__legend" aria-hidden="true">
-              {(['input', 'agent', 'kernel', 'condition', 'approval', 'output'] as const).map(type => {
-                const Icon = NodeIcons[type]
-                return (
-                  <span key={type} className={cx('lxf-legend', `lxf-node--${type}`)}>
-                    <Icon size={12} />
-                  </span>
-                )
-              })}
-              <Badge tone="success">{t('route.short.success')}</Badge>
-              <Badge tone="error">{t('route.short.failure')}</Badge>
-            </div>
-          )}
         </aside>
       )}
 

@@ -49,8 +49,12 @@ describe('Inspector', () => {
     expect(onChange.mock.calls.at(-1)![0].config.kernel).toBe('codex')
   })
 
-  it('edits retry policy and continue-on-failure', () => {
+  it('edits retry policy and continue-on-failure (under Advanced settings)', () => {
     const { onChange } = base()
+    const toggle = screen.getByRole('button', { name: /Advanced settings/ })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('switch', { name: 'Continue on failure' })).toBeNull()
+    fireEvent.click(toggle)
     fireEvent.change(screen.getByLabelText('Retries on failure'), { target: { value: '3' } })
     expect(onChange.mock.calls.at(-1)![0].retry).toEqual({ max: 3, backoffMs: 1000 })
     fireEvent.click(screen.getByRole('switch', { name: 'Continue on failure' }))
@@ -59,6 +63,7 @@ describe('Inspector', () => {
 
   it('connects routes from the keyboard-accessible form', () => {
     const { onConnect } = base()
+    fireEvent.click(screen.getByRole('button', { name: /^Connections/ }))
     fireEvent.change(screen.getByLabelText('Connect the Failure route to'), { target: { value: 'output' } })
     fireEvent.click(screen.getAllByRole('button', { name: 'Add edge' })[1]!)
     expect(onConnect).toHaveBeenCalledWith('review', 'output', 'failure')

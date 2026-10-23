@@ -1,11 +1,15 @@
 /**
- * Text field with `{{ variable }}` autocomplete. Typing `{{` (or Ctrl+Space)
- * opens a listbox of variables available to this node; after `|` inside a
- * tag it offers filters. Arrow keys move, Enter/Tab accept, Escape closes.
+ * Text field with variables. An "Insert variable" button lists what this
+ * step can refer to in plain words ("Result of “Review”") and inserts the
+ * `{{ … }}` tag at the caret, so nobody has to type template syntax. For
+ * people who do: typing `{{` (or Ctrl+Space) opens a listbox of variables;
+ * after `|` inside a tag it offers filters. Arrow keys move, Enter/Tab
+ * accept, Escape closes.
  */
 import { useId, useMemo, useRef, useState, type ReactElement } from 'react'
-import { TEMPLATE_FILTERS } from '../store/graph.ts'
+import { TEMPLATE_FILTERS, type VariableOption } from '../store/graph.ts'
 import { cx } from '../ui/glass.tsx'
+import { IconPlus } from '../ui/icons.tsx'
 
 export interface TemplateFieldProps {
   id: string
@@ -19,6 +23,19 @@ export interface TemplateFieldProps {
   label: string
   listLabel: string
   mono?: boolean
+  /** Variables for the "Insert variable" picker, with readable names. Omit to hide the picker. */
+  options?: readonly VariableOption[]
+  /** Picker texts: the button, the empty list, and one heading per group. */
+  pickerText?: { insert: string; none: string; groups: Record<VariableOption['group'], string> }
+}
+
+/** `text` with `{{ value }}` inserted at `caret` (a space is added where it would touch a word). */
+export function insertVariable(text: string, caret: number, value: string): { text: string; caret: number } {
+  const at = Math.max(0, Math.min(caret, text.length))
+  const before = text.slice(0, at)
+  const after = text.slice(at)
+  const tag = `${before && !/\s$/.test(before) ? ' ' : ''}{{ ${value} }}${after && !/^\s/.test(after) ? ' ' : ''}`
+  return { text: before + tag + after, caret: at + tag.length }
 }
 
 interface Context {
@@ -50,9 +67,25 @@ export function suggestions(ctx: Context, variables: readonly string[]): string[
 }
 
 export function TemplateField(props: TemplateFieldProps): ReactElement {
-  const { id, value, onChange, variables, multiline, rows = 4, placeholder, describedBy, label, listLabel, mono } = props
+  const { id, value, onChange, variables, multiline, rows = 4, placeholder, describedBy, label, listLabel, mono, options, pickerText } = props
   const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null)
   const listId = useId()
+  const pickerId = useId()
+  const [picking, setPicking] = useState(false)
+  // Caret when the field last had focus: the picker button takes focus away.
+  const lastCaret = useRef<number | null>(null)
+  const pick = (option: VariableOption): void => {
+    const next = insertVariable(value, lastCaret.current ?? value.length, option.value)
+    onChange(next.text)
+    setPicking(false)
+    lastCaret.current = next.caret
+    requestAnimationFrame(() => {
+      const el = ref.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(next.caret, next.caret)
+    })
+  }
   const [ctx, setCtx] = useState<Context | undefined>()
   const [active, setActive] = useState(0)
   const items = useMemo(() => (ctx ? suggestions(ctx, variables) : []), [ctx, variables])
@@ -98,7 +131,10 @@ export function TemplateField(props: TemplateFieldProps): ReactElement {
       onChange(event.target.value)
       refresh(event.target.value, event.target.selectionStart)
     },
-    onBlur: () => setTimeout(() => setCtx(undefined), 120),
+    onBlur: () => {
+      lastCaret.current = ref.current?.selectionStart ?? null
+      setTimeout(() => setCtx(undefined), 120)
+    },
     onKeyDown: (event: React.KeyboardEvent) => {
       if (event.key === ' ' && event.ctrlKey) {
         event.preventDefault()
@@ -125,9 +161,34 @@ export function TemplateField(props: TemplateFieldProps): ReactElement {
     },
   }
 
+  const groups = (['inputs', 'nodes', 'loop', 'run'] as const).map(group => ({ group, items: (options ?? []).filter(o => o.group === group) })).filter(g => g.items.length > 0)
   return (
     <div className="lxf-template">
       {multiline ? <textarea {...common} rows={rows} /> : <input {...common} type="text" />}
+      {options !== undefined && pickerText !== undefined && (
+        <div className="lxf-template__bar">
+          <button type="button" className="lxf-template__insert" aria-expanded={picking} aria-controls={pickerId} onClick={() => setPicking(v => !v)}>
+            <IconPlus size={12} />
+            {pickerText.insert}
+          </button>
+          {picking && (
+            <div id={pickerId} className="lxf-varpicker" role="group" aria-label={pickerText.insert} onKeyDown={event => event.key === 'Escape' && (event.stopPropagation(), setPicking(false))}>
+              {groups.length === 0 && <div className="lxf-varpicker__none">{pickerText.none}</div>}
+              {groups.map(({ group, items }) => (
+                <div key={group} className="lxf-varpicker__group">
+                  <div className="lxf-varpicker__heading">{pickerText.groups[group]}</div>
+                  {items.map(option => (
+                    <button key={option.value} type="button" className="lxf-varpicker__item" title={`{{ ${option.value} }}`} onClick={() => pick(option)}>
+                      <span className="lxf-varpicker__label">{option.label}</span>
+                      <code className="lxf-varpicker__code">{option.value}</code>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {open && (
         <ul id={listId} role="listbox" aria-label={listLabel} className="lxf-template__list">
           {items.map((item, i) => (

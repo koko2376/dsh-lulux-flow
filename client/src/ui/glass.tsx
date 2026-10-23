@@ -1,5 +1,5 @@
 /**
- * Liquid-glass control set used across DSH-LULUX Flow surfaces. Pure presentation:
+ * Glass control set used across DSH-LULUX Flow surfaces. Pure presentation:
  * every visible string arrives as a prop (already localized by the caller).
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactElement, type ReactNode } from 'react'
@@ -146,6 +146,29 @@ export function Empty({ title, detail, action, art }: { title: string; detail?: 
       {detail && <div className="lxf-empty__detail">{detail}</div>}
       {action}
     </div>
+  )
+}
+
+/**
+ * A collapsible group ("Advanced settings"). The body stays mounted while
+ * closed (`hidden`), so typed but unsaved field text is kept.
+ */
+export function Disclosure({ title, hint, defaultOpen = false, children, className }: { title: string; hint?: string; defaultOpen?: boolean; children: ReactNode; className?: string }): ReactElement {
+  const [open, setOpen] = useState(defaultOpen)
+  const id = useId()
+  return (
+    <section className={cx('lxf-disclosure', open && 'is-open', className)}>
+      <button type="button" className="lxf-disclosure__toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(v => !v)}>
+        <svg className="lxf-disclosure__chevron" width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M8 5.5l4.5 4.5L8 14.5" />
+        </svg>
+        <span className="lxf-disclosure__title">{title}</span>
+        {hint && !open && <span className="lxf-disclosure__hint">{hint}</span>}
+      </button>
+      <div id={id} className="lxf-disclosure__body" hidden={!open}>
+        {children}
+      </div>
+    </section>
   )
 }
 

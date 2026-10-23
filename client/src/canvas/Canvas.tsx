@@ -28,8 +28,25 @@ import { edgeTypes, nodeTypes, type FlowCanvasEdge, type FlowCanvasNode } from '
 /** Small graphs fit on screen; a minimap only adds an empty box there. */
 const MINIMAP_MIN_NODES = 12
 
-/** Fit inside the free area: clear of the toolbar (top) and the node palette (left), which float over the canvas. */
-const FIT_VIEW = { padding: { top: '84px', left: '176px', right: '48px', bottom: '48px' }, maxZoom: 1, minZoom: 0.3 } as const
+/** Free area for fitting: clear of the toolbar (top) and the node palette (left), which float over the canvas. */
+const FIT_PAD = { top: 84, left: 244, right: 48, bottom: 48 }
+/**
+ * Never fit below a zoom where node text stays readable. A graph wider than
+ * the view at that zoom starts at its first step (left) instead of being
+ * shrunk to an unreadable overview; pan or zoom out to see the rest.
+ */
+export const READABLE_ZOOM = 0.75
+const FIT_VIEW = { padding: { top: `${FIT_PAD.top}px`, left: `${FIT_PAD.left}px`, right: `${FIT_PAD.right}px`, bottom: `${FIT_PAD.bottom}px` }, maxZoom: 1, minZoom: READABLE_ZOOM } as const
+
+/** Viewport that fits `bounds` into a `width` x `height` box at a readable zoom (left-aligned when it cannot fit). */
+export function readableViewport(bounds: { x: number; y: number; width: number; height: number }, width: number, height: number): { x: number; y: number; zoom: number } {
+  const freeW = Math.max(1, width - FIT_PAD.left - FIT_PAD.right)
+  const freeH = Math.max(1, height - FIT_PAD.top - FIT_PAD.bottom)
+  const zoom = Math.min(1, Math.max(READABLE_ZOOM, Math.min(freeW / Math.max(1, bounds.width), freeH / Math.max(1, bounds.height))))
+  const x = bounds.width * zoom <= freeW ? FIT_PAD.left + (freeW - bounds.width * zoom) / 2 - bounds.x * zoom : FIT_PAD.left - bounds.x * zoom
+  const y = bounds.height * zoom <= freeH ? FIT_PAD.top + (freeH - bounds.height * zoom) / 2 - bounds.y * zoom : FIT_PAD.top - bounds.y * zoom
+  return { x, y, zoom }
+}
 
 export const DRAG_MIME = `application/x-${BRAND.id}-node`
 
@@ -125,7 +142,16 @@ export function Canvas(props: CanvasProps): ReactElement {
         // Fit once every node has a real size (the initial fitView runs before measurement).
         if (!fitted.current) {
           fitted.current = true
-          requestAnimationFrame(() => void flow.current?.fitView(FIT_VIEW))
+          requestAnimationFrame(() => {
+            const instance = flow.current
+            const box = wrapper.current?.getBoundingClientRect()
+            if (!instance) return
+            if (!box || box.width === 0) {
+              void instance.fitView(FIT_VIEW)
+              return
+            }
+            void instance.setViewport(readableViewport(instance.getNodesBounds(instance.getNodes()), box.width, box.height))
+          })
         }
       }
       for (const change of changes) {

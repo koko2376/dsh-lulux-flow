@@ -1,5 +1,5 @@
 /*
- * DSH-LULUX Flow — "liquid glass" material over DSH theme tokens.
+ * DSH-LULUX Flow — translucent glass material over DSH theme tokens.
  *
  * Every color derives from DSH's --dsw-alias-* semantic tokens (with neutral
  * fallbacks for standalone previews), so light and dark follow the shell's
@@ -1202,27 +1202,94 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  width: 216px;
   max-height: calc(100% - 76px);
   overflow: auto;
-  padding: 8px 6px;
+  padding: 10px 6px 8px;
   border-radius: var(--lxf-r-l);
 }
 
 .lxf-palette__title {
-  padding: 0 8px 4px;
+  padding: 0 8px 6px;
+  color: var(--lxf-label);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lxf-palette__group {
+  padding: 2px 8px 2px;
   color: var(--lxf-label-3);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
 }
 
+.lxf-palette__more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--lxf-r-s);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lxf-label-2);
+  cursor: pointer;
+  transition: background-color 160ms;
+}
+
+.lxf-palette__more:hover {
+  background: var(--lxf-hover);
+}
+
+.lxf-palette__more svg {
+  transition: transform var(--lxf-dur) var(--lxf-spring);
+}
+
+.lxf-palette__more.is-open svg {
+  transform: rotate(180deg);
+}
+
+.lxf-palette__tip {
+  margin: 6px 8px 0;
+  color: var(--lxf-label-3);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.lxf-palette__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+
+.lxf-palette__label {
+  font-weight: 500;
+  line-height: 17px;
+}
+
+.lxf-palette__hint {
+  color: var(--lxf-label-3);
+  font-size: 11px;
+  line-height: 14px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .lxf-palette__item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  height: 32px;
-  padding: 0 10px 0 4px;
+  min-height: 44px;
+  padding: 5px 8px 5px 5px;
   border: 0;
   border-radius: var(--lxf-r-s);
   background: transparent;
@@ -1394,8 +1461,9 @@
 
 .lxf-node {
   position: relative;
-  width: 220px;
-  padding: 10px 12px 10px;
+  width: 240px;
+  padding: 12px 14px 12px;
+  font-size: 14px;
   border-radius: 16px;
   color: var(--lxf-label);
   background: var(--lxf-glass-strong);
@@ -1519,8 +1587,15 @@
 
 .lxf-node__type {
   color: var(--lxf-label-3);
-  font-size: 11px;
-  line-height: 14px;
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.lxf-node__hint {
+  margin-top: 7px;
+  color: var(--lxf-label-3);
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .lxf-node__status {
@@ -1540,8 +1615,8 @@
 .lxf-node__sub {
   margin-top: 7px;
   color: var(--lxf-label-2);
-  font-size: 11.5px;
-  line-height: 15px;
+  font-size: 12.5px;
+  line-height: 17px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -3109,4 +3184,275 @@ button.lxf-issue:hover {
   line-height: 16px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* ── simplified workflow page: toolbar menu, disclosures, variable picker, getting started ── */
+
+.lxf-toolbar__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--lxf-label-2);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 160ms;
+}
+
+.lxf-toolbar__more:hover,
+.lxf-toolbar__more[aria-expanded='true'] {
+  background: var(--lxf-hover);
+  color: var(--lxf-label);
+}
+
+.lxf-menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lxf-menu__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--lxf-r-s);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--lxf-label);
+  cursor: pointer;
+}
+
+.lxf-menu__item:hover,
+.lxf-menu__item:focus-visible {
+  background: var(--lxf-hover);
+  outline: none;
+}
+
+.lxf-menu__icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  color: var(--lxf-label-2);
+}
+
+.lxf-menu__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lxf-menu__label {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.lxf-menu__hint {
+  color: var(--lxf-label-3);
+  font-size: 11.5px;
+  line-height: 15px;
+}
+
+.lxf-inspector__what {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--lxf-r-s);
+  background: color-mix(in srgb, var(--lxf-accent) 7%, transparent);
+  color: var(--lxf-label-2);
+  font-size: 12.5px;
+  line-height: 17px;
+}
+
+.lxf-inspector__tip {
+  margin: 4px 0 12px;
+}
+
+.lxf-disclosure {
+  margin-top: 6px;
+  border-top: 0.5px solid var(--lxf-hairline);
+}
+
+.lxf-disclosure__toggle {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 12px 2px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--lxf-label);
+  cursor: pointer;
+}
+
+.lxf-disclosure__chevron {
+  flex: none;
+  align-self: center;
+  color: var(--lxf-label-3);
+  transition: transform var(--lxf-dur) var(--lxf-spring);
+}
+
+.lxf-disclosure.is-open .lxf-disclosure__chevron {
+  transform: rotate(90deg);
+}
+
+.lxf-disclosure__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lxf-disclosure__hint {
+  flex-basis: 100%;
+  padding-left: 20px;
+  color: var(--lxf-label-3);
+  font-size: 11.5px;
+  line-height: 15px;
+}
+
+.lxf-disclosure__body {
+  padding: 0 0 10px;
+}
+
+.lxf-template__bar {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.lxf-template__insert {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lxf-accent-soft);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lxf-accent);
+  cursor: pointer;
+}
+
+.lxf-template__insert:hover {
+  background: color-mix(in srgb, var(--lxf-accent) 22%, transparent);
+}
+
+.lxf-varpicker {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(300px, 100%);
+  max-height: 280px;
+  overflow: auto;
+  padding: 4px;
+  border-radius: var(--lxf-r-m);
+  /* Opaque: it opens over other form fields, which must not show through. */
+  background: var(--lxf-layer);
+  box-shadow: var(--lxf-specular), 0 0 0 0.5px var(--lxf-hairline), var(--lxf-shadow);
+}
+
+.lxf-varpicker__heading {
+  padding: 6px 8px 2px;
+  color: var(--lxf-label-3);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.lxf-varpicker__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--lxf-r-s);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--lxf-label);
+  cursor: pointer;
+}
+
+.lxf-varpicker__item:hover,
+.lxf-varpicker__item:focus-visible {
+  background: var(--lxf-hover);
+  outline: none;
+}
+
+.lxf-varpicker__label {
+  font-size: 12.5px;
+  line-height: 17px;
+}
+
+.lxf-varpicker__code {
+  color: var(--lxf-label-3);
+  font-family: var(--lxf-mono);
+  font-size: 10.5px;
+  line-height: 14px;
+}
+
+.lxf-varpicker__none {
+  padding: 8px;
+  color: var(--lxf-label-3);
+  font-size: 12px;
+}
+
+.lxf-empty__start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.lxf-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 14px 18px;
+  list-style: none;
+  border-radius: var(--lxf-r-m);
+  background: color-mix(in srgb, var(--lxf-layer) 55%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--lxf-hairline);
+  text-align: left;
+}
+
+.lxf-steps__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--lxf-label-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.lxf-steps__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--lxf-accent-soft);
+  color: var(--lxf-accent);
+  font-size: 12px;
+  font-weight: 600;
 }
