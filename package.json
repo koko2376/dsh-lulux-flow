@@ -41,6 +41,8 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "src/**/*.ts",
+    "client/src/**",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
     "icon.svg",
@@ -95,6 +97,7 @@
     "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
     "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
     "@deepseek-ai/dsh-subagent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tool-subagent": "0.2.1-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
     "@deepseek-ai/schemastery": "~3.18.5",
     "@eslint/js": "^9.39.0",
@@ -116,7 +119,22 @@
     "vitest": "^4.0.5"
   },
   "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-tool-subagent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
       "optional": true
     }
   }

@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@deepseek-ai/dsh-tool-subagent':
-        specifier: '>=0.2.1-rc.2 <0.3.0'
-        version: 0.2.1-rc.2(1f5281c232139de5bab760cfb48ef106)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ~4.0.5
@@ -24,6 +20,9 @@ importers:
       '@deepseek-ai/dsh-subagent':
         specifier: 0.2.1-rc.2
         version: 0.2.1-rc.2(114be2e03e512d1707f82bdb2fd55108)
+      '@deepseek-ai/dsh-tool-subagent':
+        specifier: 0.2.1-rc.2
+        version: 0.2.1-rc.2(1f5281c232139de5bab760cfb48ef106)
       '@deepseek-ai/dsh-tools':
         specifier: 0.2.1-rc.2
         version: 0.2.1-rc.2(53871834bb50b7f532ec7289e680bbda)
