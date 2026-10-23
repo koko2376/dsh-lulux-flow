@@ -612,6 +612,13 @@
   gap: 0 10px;
 }
 
+.lxf-check input[type='checkbox'] {
+  flex: none;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+
 .lxf-check {
   display: inline-flex;
   align-items: center;
@@ -1983,16 +1990,39 @@
   width: 100%;
 }
 
+/* a grid or flex row right after the floated legend would otherwise sit beside it and overflow */
+.lxf-subform > :not(legend) {
+  clear: both;
+}
+
 .lxf-subform > .lxf-btn {
   margin-bottom: 10px;
 }
 
 .lxf-inputrow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 82px auto auto;
+  /* two lines so the row fits the narrowest inspector: name, then type / required / remove */
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'name name name'
+    'type req del';
   align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
+  min-width: 0;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 0.5px solid var(--lxf-hairline);
+}
+
+.lxf-inputrow > .lxf-input--mono { grid-area: name; }
+.lxf-inputrow > .lxf-select { grid-area: type; }
+.lxf-inputrow > .lxf-check { grid-area: req; }
+.lxf-inputrow > .lxf-iconbtn,
+.lxf-inputrow > button { grid-area: del; }
+
+.lxf-inputrow:last-of-type {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .lxf-kernelpick {
