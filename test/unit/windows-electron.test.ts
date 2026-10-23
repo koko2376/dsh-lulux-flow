@@ -4,7 +4,7 @@
  * entries, PATH/PATHEXT handling, install-script launchers and tree kill.
  * Shim texts are exactly what npm's cmd-shim writes (with CRLF line ends).
  */
-import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { cleanOverridePath, fromPath, isNodeScript, nativeProblem, resolveBinary, resolveCmdShim, windowsExtensions } from '../../src/kernels/binary.js'
@@ -137,7 +137,7 @@ describe('Node runtime for JavaScript entries', () => {
     writeFileSync(file, Buffer.alloc(2048))
     expect(readRunAsNodeFuse(file)).toBe('unknown')
     expect(readRunAsNodeFuse(join(dir, 'missing'))).toBe('unknown')
-    expect(electronFuseFile('/Applications/DSH Desktop.app/Contents/MacOS/DSH Desktop')).toBe('/Applications/DSH Desktop.app/Contents/Frameworks/Electron Framework.framework/Electron Framework')
+    if (process.platform !== 'win32') expect(electronFuseFile('/Applications/DSH Desktop.app/Contents/MacOS/DSH Desktop')).toBe('/Applications/DSH Desktop.app/Contents/Frameworks/Electron Framework.framework/Electron Framework')
     expect(electronFuseFile('C:\\Users\\1\\AppData\\Local\\Programs\\DSH Desktop\\DSH Desktop.exe')).toBe('C:\\Users\\1\\AppData\\Local\\Programs\\DSH Desktop\\DSH Desktop.exe')
   })
   it('finds node on PATH entries with quotes, spaces and non-ASCII characters', () => {
@@ -188,8 +188,9 @@ describe('PATH lookup on Windows', () => {
 })
 
 describe('npm and install scripts', () => {
-  it('runs npm through its JS entry with the Node runtime', () => {
-    const dir = tempDir()
+  // POSIX layout with a symlinked `npm`; Windows needs extra privileges to create symlinks
+  it.skipIf(process.platform === 'win32')('runs npm through its JS entry with the Node runtime', () => {
+    const dir = realpathSync(tempDir())
     const cli = join(dir, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')
     mkdirSync(join(cli, '..'), { recursive: true })
     writeFileSync(cli, '#!/usr/bin/env node\n')
