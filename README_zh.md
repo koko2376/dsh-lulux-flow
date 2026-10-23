@@ -88,7 +88,7 @@ allowBuilds:
   esbuild: true
 ```
 
-允许构建意味着在你的机器上执行该包的脚本；想固定来源可以锁定标签或 commit（`github:koko2376/dsh-lulux-flow#v0.1.0`）。npm 包自带构建产物，无需构建。
+允许构建意味着在你的机器上执行该包的脚本；想固定来源可以锁定标签或 commit（`github:koko2376/dsh-lulux-flow#v0.1.1`）。npm 包自带构建产物，无需构建。
 
 CLI 本身按需安装：在 **内核** 页面一键安装，或在设置里指向已有的可执行文件。
 
@@ -122,7 +122,7 @@ CLI 本身按需安装：在 **内核** 页面一键安装，或在设置里指�
 | 每个 CLI：启用 | 开 | 显示并允许使用该 CLI。 |
 | 每个 CLI：模式 | `scoped` | `scoped` 走网关、免登录；`global` 使用 CLI 自己的登录和环境。 |
 | 每个 CLI：权限 | `ask` | `read-only`、`ask`、`edit`、`full`（Grok CLI 没有 `edit`）。同时也是工作流节点的上限；无人值守运行时 `ask` 按 `read-only` 处理。 |
-| 每个 CLI：可执行文件路径 | 自动 | 显式指定可执行文件；留空则在插件安装目录和 `PATH` 中查找。该路径会被执行（包括 `--version`），只指向你信任的程序。 |
+| 每个 CLI：可执行文件路径 | 自动 | 显式指定可执行文件（`.exe`、`.cmd` 或脚本；首尾引号会被忽略）；留空则在插件安装目录、`PATH` 和各 CLI 的常见安装位置中查找。该路径会被执行（包括 `--version`），只指向你信任的程序。 |
 | 镜像源覆盖 | 自动 | 下载 CLI 包用的 npm 镜像（只接受 `https://`；`http://` 仅限 127.0.0.1/localhost）；留空则探测默认源并选最快的。 |
 | 信任镜像 | 关 | registry.npmjs.org 不可达时是否仍允许安装。关：拒绝安装，因为锁文件必须来自 npmjs.org。开：整棵依赖树都信任镜像自己的元数据。 |
 
@@ -245,7 +245,8 @@ CLI 的工具、提示词和工作方式不变，但效果取决于网关背后�
 
 - **转发时会丢弃图片**：网关只把文本转给 DSH 的模型运行时，CLI 发来的内联图片会被替换为占位说明，远程图片地址不会被抓取。
 - **Gemini CLI、Qwen Code、Grok CLI 通过重放上下文续聊**，不是原生会话续接，长对话每轮都会重新发送历史。Claude Code 和 Codex 为原生续接。
-- **Windows 上启动 CLI 属于尽力支持**：npm 的 `.cmd` 包装脚本会被解析成对应的 JavaScript 入口并用 Node 直接运行（解析失败时才经 `cmd.exe` 并转义参数），参数转义有单元测试；各 CLI 在 Windows 上的端到端启动尚未验证。
+- **Windows 上启动 CLI 属于尽力支持**：npm 的 `.cmd` 包装脚本会被解析成它实际启动的程序：原生可执行文件（例如 Claude Code 的 `claude.exe`）直接运行，JavaScript 入口用 Node 运行（两者都解析不到时才经 `cmd.exe` 并转义参数）。包装脚本解析和参数转义有单元测试；各 CLI 在 Windows 上的端到端启动尚未验证。
+- **DSH Desktop 里的 Node.js**：DSH Desktop 自己的可执行文件不是 Node.js。入口是 JavaScript 的 CLI（Codex 的启动脚本、Gemini CLI、Qwen Code、Windows 上的 Grok CLI）、脚本节点和 CLI 安装，会使用 `PATH`（或常见安装位置）里的 Node.js 20+；找不到时，在应用允许的情况下把 DSH Desktop 当作 Node.js 运行；否则「内核」页会说明原因，不会启动任何程序。安装 Node.js 22+ 即可避免。
 - **Grok CLI 没有 `edit` 档**：它没有「能改文件但不能执行命令」的模式，因此只提供 `read-only`/`ask`（只读工具）和 `full`。
 - 只有 Claude Code 会把权限请求桥接到 DSH 审批；其他 CLI 使用各自的沙箱 / 审批参数。
 - CLI 作为对话 Agent 时，拿不到 DSH 自己的工具。

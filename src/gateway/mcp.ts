@@ -51,7 +51,7 @@ export class McpEndpoint {
         return ok({
           protocolVersion: requested || PROTOCOL_VERSION,
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: 'dsh-lulux-flow', version: '0.1.0' },
+          serverInfo: { name: 'dsh-lulux-flow', version: '0.1.1' },
         })
       }
       case 'ping':

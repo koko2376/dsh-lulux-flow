@@ -131,7 +131,7 @@ allowBuilds:
 ```
 
 Allowing a build runs that package's scripts on your machine; pin a tag or
-commit (`github:koko2376/dsh-lulux-flow#v0.1.0`) if you want a fixed source.
+commit (`github:koko2376/dsh-lulux-flow#v0.1.1`) if you want a fixed source.
 The npm package ships prebuilt files and needs no build.
 
 The CLIs themselves are optional: install the ones you want from the
@@ -179,7 +179,7 @@ model cannot approve approval nodes.
 | Per CLI: enabled | on | Show and allow this CLI. |
 | Per CLI: mode | `scoped` | `scoped` uses the gateway and no login; `global` uses the CLI's own login and environment. |
 | Per CLI: permission | `ask` | `read-only`, `ask`, `edit` or `full` (Grok CLI: no `edit`). Also the ceiling for workflow nodes; unattended runs treat `ask` as `read-only`. |
-| Per CLI: binary path | auto | Explicit executable; empty searches the plugin's install dir and `PATH`. This path is executed (also for `--version`), so only point it at programs you trust. |
+| Per CLI: binary path | auto | Explicit executable (`.exe`, `.cmd`, a script; surrounding quotes are ignored); empty searches the plugin's install dir, `PATH` and the CLIs' usual install locations. This path is executed (also for `--version`), so only point it at programs you trust. |
 | Registry override | auto | npm mirror for CLI tarballs (`https://` only; `http://` only for 127.0.0.1/localhost); empty probes the defaults and picks the fastest. |
 | Trust mirror | off | Allow installs when registry.npmjs.org is unreachable. Off: the install is refused, because the lockfile must come from npmjs.org. On: the mirror's own metadata is trusted for the whole tree. |
 
@@ -344,10 +344,18 @@ using the secret shown once when you enable the webhook (enabling again rotates 
 - **Gemini CLI, Qwen Code and Grok CLI replay context** instead of resuming a
   native session, so long chats resend history on each turn. Claude Code and
   Codex resume natively.
-- **Windows CLI launch is best-effort.** npm `.cmd` shims are resolved to their
-  JavaScript entry and run with Node (or, if that fails, through `cmd.exe` with
-  escaped arguments), with unit tests for the quoting; launching each CLI on
-  Windows has not been verified end-to-end.
+- **Windows CLI launch is best-effort.** npm `.cmd` shims are resolved to the
+  program they start: native executables (such as Claude Code's `claude.exe`)
+  run directly, JavaScript entries run with Node (or, if neither can be
+  resolved, through `cmd.exe` with escaped arguments). Shim parsing and
+  quoting have unit tests; launching each CLI on Windows has not been
+  verified end-to-end.
+- **Node.js inside DSH Desktop.** DSH Desktop's own executable is not Node.js.
+  CLIs whose entry is a JavaScript file (Codex's launcher, Gemini CLI, Qwen
+  Code, Grok CLI on Windows), script nodes and CLI installs use a Node.js 20+
+  found on `PATH` (or in its usual install location). Without one, DSH Desktop
+  is run as Node.js when the app allows it; otherwise the Kernels page says so
+  and nothing is started. Installing Node.js 22+ avoids this.
 - **Grok CLI has no `edit` level**: it has no "edit files but no shell" mode,
   so only `read-only`/`ask` (read tools) and `full` are offered.
 - Only Claude Code bridges permission prompts to DSH approvals; the other CLIs

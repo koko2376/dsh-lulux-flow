@@ -6,6 +6,54 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-23
+
+### Fixed
+
+- **DSH Desktop (Windows): a second DSH window opened and the kernel failed
+  to start.** Claude Code 2.1 and later ship a native `claude.exe` behind
+  their npm `.cmd` shim; the plugin ran it as a Node.js script with DSH
+  Desktop's executable. Native executables now run directly.
+- JavaScript entries (Codex's launcher, Gemini CLI, Qwen Code, Grok CLI on
+  Windows), script nodes and npm no longer assume the host executable is
+  Node.js. Inside DSH Desktop a Node.js 20+ on `PATH` (or in its usual install
+  location) is used; otherwise DSH Desktop runs as Node.js
+  (`ELECTRON_RUN_AS_NODE=1`) only when the app allows it, and the Kernels page
+  explains what is missing instead of starting anything.
+- npm `.cmd` shims for Node.js scripts resolved to the `node.exe` they test
+  for when Node.js lives in the same folder (nvm-windows, Volta, an npm prefix
+  in the Node.js folder), so the CLI started as bare `node.exe`.
+- An install whose package scripts did not run left Claude Code's
+  placeholder `bin/claude.exe`; it is now reported on the Kernels page instead
+  of being started.
+- Binaries are identified from their first bytes; resolving a CLI no longer
+  reads the whole (hundreds of MB) executable.
+- `PATH` lookup follows `PATHEXT`, ignores quoted entries' quotes, skips npm's
+  extensionless shell shim on Windows, and also checks `~/.local/bin` and
+  `%APPDATA%\npm`. A binary path in settings may be quoted ("Copy as path")
+  or point at a `.cmd` / `.bat` file.
+- When npm runs on DSH Desktop's runtime, package install scripts that call
+  `node` find one. An install that times out ends npm's whole process tree.
+- `taskkill` is called by its full path; a run whose working directory is
+  missing says so instead of reporting the CLI as missing; settings and
+  workflow files are written with a retry when Windows briefly locks them.
+- Installing into a DSH profile no longer prints "Issues with peer
+  dependencies found": the DSH packages, which come from the DSH runtime, are
+  optional peers. A GitHub install no longer resolves the optional subagent
+  peer to a newer prerelease than the other DSH packages.
+
+### Changed
+
+- **Simpler workflow page.** The palette shows the common steps (Input,
+  Agent, Kernel, Output) with a one-line description each, and the rest under
+  "More steps". Rarely used toolbar actions (auto layout, triggers, run
+  history, export) are in a labelled "More" menu. Workflows open at a readable
+  zoom. The inspector shows a step's essential fields first, with the rest
+  under "Advanced settings" and "Connections", and an "Insert variable" picker
+  replaces typing `{{ … }}` by hand. A first-time empty state explains the
+  three steps to a first run.
+- The npm package includes the TypeScript sources (`src/`, `client/src/`).
+
 ## [0.1.0] - 2026-10-23
 
 First public release. Requires DSH `>=0.2.1-rc.2 <0.3.0` and Node.js `>=22.15.0`.
@@ -110,5 +158,6 @@ See [SECURITY.md](SECURITY.md) for the full model.
 - Left-over per-run CLI homes are removed at startup; cron does not fire twice
   in a daylight-saving fall-back hour.
 
-[Unreleased]: https://github.com/koko2376/dsh-lulux-flow/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/koko2376/dsh-lulux-flow/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/koko2376/dsh-lulux-flow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/koko2376/dsh-lulux-flow/releases/tag/v0.1.0

@@ -1,7 +1,7 @@
 {
   "name": "dsh-lulux-flow",
   "displayName": "DSH-LULUX Flow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH-LULUX Flow (DSH工作流（LULUX Flow）): run Claude Code, Codex, Gemini CLI, Qwen Code and Grok CLI on the models you already configured in DeepSeek Harness (no CLI logins, keys never passed to the CLI), and wire them into DAG workflows.",
   "keywords": [
     "dsh",

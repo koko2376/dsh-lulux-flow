@@ -106,7 +106,7 @@ function defaultDataDir(): string {
   return join(dshHome(), BRAND.id)
 }
 
-const VERSION = '0.1.0'
+const VERSION = '0.1.1'
 
 export function apply(ctx: Context, config: Config): void {
   const c = ctx as unknown as {
