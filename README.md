@@ -167,6 +167,36 @@ model starts a run of an unreviewed workflow, or of one with `edit`/`full`
 CLIs, script, HTTP or notify nodes, DSH's approval dialog asks you first. The
 model cannot approve approval nodes.
 
+## Works with ds-bot
+
+[ds-bot](https://www.npmjs.com/package/ds-bot) (DS Bot, 0.2.x) lists every
+model DSH serves, so the CLIs appear as **Bot models**
+(`lulux-flow-claude-code/default`, …) once both plugins are installed. Pick
+one for a Bot in its settings or the Create Bot form; nothing else is needed.
+
+- **Best as working members, not as the Main Bot.** A CLI Bot answers direct
+  messages, group turns (`@Name`, `[PASS]`), requests from other Bots and
+  handoffs with its own tools in its own folder, but it does not get DS Bot's
+  tools (`message_bot`, `ask_user`, `update_group`, …), so keep a DSH model on
+  the Main Bot and on group admins. In a group, a CLI member calls on another
+  member by writing `@Name`.
+- The Bot's name, role, instructions and team rules reach the CLI as extra
+  system instructions (Claude Code: `--append-system-prompt-file`; Codex:
+  developer instructions; other CLIs: on top of a new session's prompt). DS
+  Bot's memory summaries and other one-shot calls on a CLI Bot's model go to
+  the gateway model instead of starting the CLI. Images are read into text by
+  DS Bot's image reader first, because the CLI routes declare text-only input.
+- **Long tasks:** DS Bot gives a group turn about 4 minutes. A CLI task that
+  runs longer shows "(no answer)" first; its result is posted to the group
+  when the CLI finishes.
+- **Permission:** use `read-only` or `auto`-style levels (`edit`) for CLIs
+  used in groups; with `ask`, approval prompts appear in the member's hidden
+  group session.
+- Several members can start CLIs at once. `kernelMaxConcurrent` (all CLIs,
+  default 6) and `kernelMaxConcurrentPerCli` (each CLI, default 3) cap them;
+  extra runs wait in a queue and show one "Queued" line until they start.
+  Stopping a queued member removes it from the queue without starting its CLI.
+
 ## Configuration
 
 **In the UI (Settings → DSH-LULUX Flow)**, stored per user in
@@ -209,6 +239,8 @@ model cannot approve approval nodes.
 | `defaultRunDeadlineMs` | 6 h | Wall-clock limit for a run whose workflow sets none (`0` = none) |
 | `maxActiveRuns` | `16` | Runs executing at once; further starts are refused |
 | `kernelEnvPassthrough` | `[]` | Extra variable names passed to scoped CLIs, e.g. `SSH_AUTH_SOCK` for git over SSH. Anything listed is visible to the CLI |
+| `kernelMaxConcurrent` | `6` | CLI runs at once across all CLIs (chat sessions, ds-bot members, workflows, subagents); further runs wait in a FIFO queue |
+| `kernelMaxConcurrentPerCli` | `3` | CLI runs at once of any one CLI; further runs of that CLI wait in the queue |
 
 The subagent tools (`lulux_flow_subagent_claude_code`, …) are separate rows in
 the same file and are **off by default**. Enable one with:

@@ -64,4 +64,8 @@ breaks are refused on that path.
 Implement `KernelDefinition` (`src/kernels/types.ts`) and call
 `registerKernel()`. Set `permissions` when the CLI cannot enforce every level;
 missing levels are replaced by the next lower supported one, never a higher
-one.
+one. Set `systemPromptVia` to say how extra system instructions (an agent
+identity) reach the CLI: `flag` (its own option on every run, read from
+`ctx.appendSystemPrompt`), `flag-new-session` (its own option only when a
+native session starts) or `prompt` (the default: on top of a new session's
+prompt, never on resume).

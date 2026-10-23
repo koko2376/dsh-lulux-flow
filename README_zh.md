@@ -111,6 +111,16 @@ CLI 本身按需安装：在 **内核** 页面一键安装，或在设置里指�
 
 对话模型也能通过 `lulux_flow_workflow_*` 工具使用同样的工作流。模型新建或修改的、AI 生成的、导入的工作流会标记为**未审核**：打开检查节点，点 **批准** 后才能被任何触发方式运行。模型启动未审核的工作流，或包含 `edit`/`full` CLI、脚本、HTTP、通知节点的工作流时，会先弹出 DSH 审批让你确认。模型不能替你批准审批节点。
 
+## 配合 ds-bot 使用
+
+[ds-bot](https://www.npmjs.com/package/ds-bot)（DS Bot，0.2.x）会列出 DSH 提供的全部模型，所以两个插件都装好后，各个 CLI 会直接出现在 **Bot 模型**里（`lulux-flow-claude-code/default` 等）。在 Bot 设置或新建 Bot 表单里选上即可，不需要其他配置。
+
+- **适合当干活的成员，不适合当 Main Bot。** CLI Bot 能回复私聊、群聊轮次（`@名字`、`[PASS]`）、其他 Bot 的请求和交接，用的是它自己的工具和目录；但它拿不到 DS Bot 的工具（`message_bot`、`ask_user`、`update_group` 等），所以 Main Bot 和群管理员请继续用 DSH 模型。在群里，CLI 成员写 `@名字` 就能点名其他成员。
+- Bot 的名字、角色、说明和团队规则会作为附加系统指令交给 CLI（Claude Code 用 `--append-system-prompt-file`，Codex 用 developer instructions，其他 CLI 放在新会话第一条提示的开头）。DS Bot 的记忆整理等一次性调用即使用的是 CLI Bot 的模型，也会改走网关模型，不会启动 CLI。CLI 路由声明只接受文本，因此图片会先由 DS Bot 识别成文字。
+- **长任务：** DS Bot 给每个群聊轮次约 4 分钟。超过这个时间的 CLI 任务会先显示“(no answer)”，CLI 完成后结果仍会发到群里。
+- **权限：** 群里用的 CLI 建议设为 `read-only` 或自动放行级别（`edit`）；设为 `ask` 时，审批提示会出现在该成员隐藏的群会话里。
+- 多个成员可能同时启动 CLI。`kernelMaxConcurrent`（所有 CLI 合计，默认 6）和 `kernelMaxConcurrentPerCli`（每个 CLI，默认 3）限制并发；超出的运行会排队，并显示一行“Queued”状态，开始运行后继续正常输出。停止排队中的成员会把它移出队列，不会启动 CLI。
+
 ## 配置
 
 **界面设置（设置 → DSH工作流（LULUX Flow））**，按用户保存在 `<数据目录>/settings.json`：
@@ -150,6 +160,8 @@ CLI 本身按需安装：在 **内核** 页面一键安装，或在设置里指�
 | `defaultRunDeadlineMs` | 6 小时 | 工作流没设截止时间时，单次运行的总时长上限（`0` 表示不限） |
 | `maxActiveRuns` | `16` | 同时执行的运行数上限，超出会拒绝启动 |
 | `kernelEnvPassthrough` | `[]` | 额外传给作用域模式 CLI 的环境变量名，例如 git over SSH 需要的 `SSH_AUTH_SOCK`。列在这里的变量 CLI 都能看到 |
+| `kernelMaxConcurrent` | `6` | 所有 CLI 同时运行的最大数量（聊天会话、ds-bot 成员、工作流、子代理合计），超出的按先后顺序排队 |
+| `kernelMaxConcurrentPerCli` | `3` | 单个 CLI 同时运行的最大数量，超出的排队 |
 
 子代理工具（`lulux_flow_subagent_claude_code` 等）是同一文件里的独立行，**默认关闭**。开启示例：
 

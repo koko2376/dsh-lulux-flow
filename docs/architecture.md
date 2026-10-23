@@ -26,6 +26,29 @@ Limits of this design: DSH's own tools are not offered to the CLI, and the
 CLI's tool calls are not DSH tool calls (the CLI executes them itself, under
 the permission level set for it).
 
+What a turn sends to the CLI (`src/dsh/kernel-chat.ts`):
+
+- **Messages.** User-role messages the user typed (`kind: 'user'` or no
+  source), messages another agent addressed to the session (context form
+  `relay`, whatever the producer: DS Bot's group turns, requests, replies,
+  kickoffs and handoffs) and scheduled tasks (`kind: 'schedule'`). Injected
+  context (forms `snapshot`, `catalog`, `instructions`, `recall`, and unknown
+  producer kinds) is skipped. Delivered-turn counting for native resume uses
+  the same rule, and user messages that arrived together are sent together.
+- **System text.** Only an agent identity section (`# Your identity`, rendered
+  by DS Bot) is forwarded, bounded, as extra system instructions. DSH's own
+  system prompt is not: it describes DSH's tools and runtime, which the CLI
+  does not have, and the CLI brings its own system prompt. Each kernel
+  declares `systemPromptVia` (`flag`, `flag-new-session` or `prompt`).
+- **One-shot calls.** A request with `purpose` or `system`, or made only of
+  request inputs (no Session message ids or sources), is a hand-built
+  one-shot by the dsh-llm contract; it goes to the gateway model and never
+  starts the CLI or touches the session's resume state.
+
+`KernelService.run` caps concurrent CLI runs (`kernelMaxConcurrent`,
+`kernelMaxConcurrentPerCli`) with a FIFO queue (`src/kernels/limiter.ts`); a
+queued run reports one status line and leaves the queue when aborted.
+
 ## Workflow runs
 
 A run freezes a snapshot of the workflow, executes nodes when their inbound

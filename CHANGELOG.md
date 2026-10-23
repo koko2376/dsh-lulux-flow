@@ -8,6 +8,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.1.1] - 2026-10-23
 
+### Added
+
+- **Works with ds-bot 0.2.x.** The CLI routes can be chosen as a DS Bot's
+  model and answer as a Bot: group turns, `@Name` calls, `[PASS]`, requests
+  and replies between Bots, team kickoffs, handoffs and scheduled tasks.
+  Messages another agent addresses to the session (context form `relay`) and
+  scheduled tasks now reach the CLI; injected context (clock and runtime
+  snapshots, catalogs, instructions) still does not. Messages that queued
+  while the CLI was busy go together on the next resumed turn.
+- The agent identity from the request's system prompt (DS Bot's `# Your
+  identity` section: name, role, instructions, team rules; bounded to 12,000
+  characters) reaches the CLI as extra system instructions, with a note on
+  which DS Bot tools the CLI does not have. Claude Code reads it with
+  `--append-system-prompt-file` on every run, Codex as `developer_instructions`
+  when a session starts, and Gemini CLI, Qwen Code and Grok CLI on top of a new
+  session's prompt. The rest of DSH's system prompt, which describes DSH's own
+  tools, is not forwarded.
+- One-shot model calls on a CLI route (a `system` field, a `purpose`, or only
+  request inputs, such as DS Bot's memory summaries) go to the gateway model
+  and never start the CLI or change its resume state.
+- The CLI routes declare text-only input, so callers such as DS Bot turn
+  images into text before a turn reaches the CLI.
+- **Concurrency caps for CLI runs:** `kernelMaxConcurrent` (default 6) and
+  `kernelMaxConcurrentPerCli` (default 3) in the plugin config, with Chinese
+  and English descriptions. Extra runs wait in a FIFO queue, show one
+  "Queued" line in the chat (or the workflow trace) and can be stopped while
+  they wait without starting the CLI.
+
 ### Fixed
 
 - **DSH Desktop (Windows): a second DSH window opened and the kernel failed
@@ -83,6 +111,8 @@ All notable changes to this project are documented here. The format follows
   dragging their inner edge (double-click resets). Widths and collapsed state
   are remembered.
 - The npm package includes the TypeScript sources (`src/`, `client/src/`).
+- Claude Code's minimum version is now 2.0.34 (the first with
+  `--append-system-prompt-file`).
 
 ## [0.1.0] - 2026-10-23
 
