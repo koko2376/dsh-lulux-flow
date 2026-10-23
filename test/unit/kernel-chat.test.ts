@@ -106,6 +106,43 @@ describe('kernelChatStream', () => {
     await drain(kernelChatStream(kernel, second, d))
     expect(seen).toEqual([undefined, 'native-1'])
   })
+
+  it('retries once as a fresh session with replayed context when resuming fails', async () => {
+    const calls: Array<{ resume?: string; prompt: string }> = []
+    let n = 0
+    const d = deps(async req => {
+      calls.push({ resume: req.resumeSessionId, prompt: req.prompt })
+      n += 1
+      if (n === 2) return { status: 'error', text: '', usage: { inputTokens: 0, outputTokens: 0, requests: 0 }, diagnostic: 'Claude Code failed while running: No conversation found with session ID: native-1' }
+      return completed('ok')
+    })
+    await drain(kernelChatStream(kernel, options('first'), d))
+    const second = {
+      ...options('second'),
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: 'first' }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+        { role: 'user', content: [{ type: 'text', text: 'second' }] },
+      ],
+    } as unknown as GenerateOptions
+    const chunks = await drain(kernelChatStream(kernel, second, d))
+    expect(calls.map(c => c.resume)).toEqual([undefined, 'native-1', undefined])
+    expect(calls[2]!.prompt).toContain('User: first')
+    expect(calls[2]!.prompt).toContain('second')
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('does not retry a failure on a fresh session', async () => {
+    let n = 0
+    const chunks = await drain(
+      kernelChatStream(kernel, options('hi'), deps(async () => {
+        n += 1
+        return { status: 'error', text: '', usage: { inputTokens: 0, outputTokens: 0, requests: 0 }, diagnostic: 'boom' }
+      })),
+    )
+    expect(n).toBe(1)
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: { message: 'boom', code: 'KERNEL_FAILED' } } })
+  })
 })
 
 describe('workspaceRelative', () => {
@@ -134,5 +171,15 @@ describe('kernelChatStream without a real upstream model', () => {
     const chunks = await drain(kernelChatStream(findKernel('claude-code')!, options('hi'), d))
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: { code: 'GATEWAY_MODEL_UNSET' } } })
     expect(spawned).toBe(0)
+  })
+})
+
+describe('claudeResultError', () => {
+  it('names the subtype and the errors Claude Code reports instead of a generic message', async () => {
+    const { claudeResultError } = await import('../../src/kernels/catalog.js')
+    expect(claudeResultError({ type: 'result', is_error: true, subtype: 'error_during_execution', errors: ['No conversation found with session ID: x'] })).toBe('Claude Code failed while running: No conversation found with session ID: x')
+    expect(claudeResultError({ type: 'result', is_error: true, subtype: 'error_max_turns' })).toBe('Claude Code reached its turn limit')
+    expect(claudeResultError({ type: 'result', is_error: true, subtype: 'success', result: 'API Error: 401' })).toBe('API Error: 401')
+    expect(claudeResultError({ type: 'result', is_error: true })).toBe('Claude Code reported an error')
   })
 })

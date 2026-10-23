@@ -297,7 +297,11 @@ export class KernelRunner {
         if (spawnError) return resolve({ ...base, status: 'error', diagnostic: `failed to start ${request.kernel.name}: ${spawnError.message}` })
         if (aborted) return resolve({ ...base, status: 'aborted' })
         if (timedOut) return resolve({ ...base, status: 'timeout', diagnostic: `${request.kernel.name} exceeded ${request.timeoutMs} ms` })
-        if (fatal !== undefined) return resolve({ ...base, status: 'error', diagnostic: redact(fatal) })
+        if (fatal !== undefined) {
+          // a bare fatal message gains the CLI's own stderr, which usually names the cause
+          const tail = /reported an error|failed while running$/.test(fatal) ? stderr.toString().replace(/\s+/g, ' ').trim().slice(-400) : ''
+          return resolve({ ...base, status: 'error', diagnostic: redact(tail ? `${fatal}: ${tail}` : fatal) })
+        }
         if (code !== 0) {
           const detail = redact((lastError ?? stderr.toString()).replace(/\s+/g, ' ').trim().slice(-400))
           return resolve({ ...base, status: 'error', diagnostic: `${request.kernel.name} exited with code ${code ?? 'unknown'}${detail ? `: ${detail}` : ''}` })

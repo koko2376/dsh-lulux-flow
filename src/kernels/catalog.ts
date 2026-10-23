@@ -31,6 +31,21 @@ function describeInput(input: unknown): string {
 
 // ── Claude Code ─────────────────────────────────────────────────────────────
 
+/** The most specific reason a failed Claude Code `result` event carries. */
+export function claudeResultError(event: Record<string, unknown>): string {
+  const errors = asArray(event.errors).map(e => (typeof e === 'string' ? e : asString(asRecord(e).message))).filter(Boolean)
+  const detail = asString(asRecord(event.error).message) || errors.join('; ') || asString(event.result)
+  const subtype = asString(event.subtype)
+  const reason =
+    subtype === 'error_max_turns' ? 'reached its turn limit'
+    : subtype === 'error_max_budget_usd' ? 'reached its budget limit'
+    : subtype === 'error_during_execution' ? 'failed while running'
+    : ''
+  if (detail && reason) return `Claude Code ${reason}: ${detail}`
+  if (detail) return detail
+  return reason ? `Claude Code ${reason}` : `Claude Code reported an error${subtype && subtype !== 'success' ? ` (${subtype})` : ''}`
+}
+
 function claudeParser(): KernelParser {
   let partial = false
   return {
@@ -57,7 +72,7 @@ function claudeParser(): KernelParser {
         else if (text && !partial) out.push({ type: 'text', text })
         partial = false
       } else if (type === 'result') {
-        if (event.is_error === true) out.push({ type: 'error', message: asString(asRecord(event.error).message) || asString(event.result) || 'Claude Code reported an error', fatal: true })
+        if (event.is_error === true) out.push({ type: 'error', message: claudeResultError(event), fatal: true })
         const usage = asRecord(event.usage)
         if (typeof usage.input_tokens === 'number') out.push({ type: 'usage', inputTokens: usage.input_tokens, outputTokens: Number(usage.output_tokens ?? 0) })
         if (asString(event.session_id)) out.push({ type: 'session', id: asString(event.session_id) })

@@ -209,58 +209,77 @@ export async function* kernelChatStream(kernel: KernelDefinition, options: Gener
   }
 
   let finalSeen = false
+  let emitted = false
   const cwd = deps.cwdFor(sessionId)
-  const runPromise = deps.kernels
-    .run({
-      kernel,
-      prompt,
-      cwd,
-      mode: settings.mode,
-      permission: settings.permission,
-      target,
-      runId: `chat.${sessionId ?? 'anon'}.${Date.now().toString(36)}`,
-      ...(sessionId !== undefined ? { sessionId } : {}),
-      ...(resume !== undefined ? { resumeSessionId: resume } : {}),
-      timeoutMs: deps.timeoutMs,
-      ...(options.signal !== undefined ? { signal: options.signal } : {}),
-      onEvent: (event: KernelEvent) => {
-        if (event.type === 'text') {
-          if (event.final === true && textBuffer) write('text', '\n\n')
-          write('text', event.text)
-          finalSeen = true
-        } else if (event.type === 'reasoning') write('reasoning', event.text)
-        else if (event.type === 'tool') write('reasoning', `▸ ${event.name}${event.detail ? ` · ${workspaceRelative(event.detail, cwd)}` : ''}\n`)
-        else if (event.type === 'error' && !event.fatal) write('reasoning', `! ${event.message}\n`)
-      },
-    })
+  type RunResult = Awaited<ReturnType<KernelService['run']>>
+  async function* attempt(turnPrompt: string, turnResume: string | undefined): AsyncGenerator<StreamChunk, { result: RunResult | undefined; failure: unknown }> {
+    const runPromise = deps.kernels
+      .run({
+        kernel,
+        prompt: turnPrompt,
+        cwd,
+        mode: settings.mode,
+        permission: settings.permission,
+        target,
+        runId: `chat.${sessionId ?? 'anon'}.${Date.now().toString(36)}`,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        ...(turnResume !== undefined ? { resumeSessionId: turnResume } : {}),
+        timeoutMs: deps.timeoutMs,
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
+        onEvent: (event: KernelEvent) => {
+          if (event.type === 'text') {
+            if (event.final === true && textBuffer) write('text', '\n\n')
+            write('text', event.text)
+            finalSeen = true
+            emitted = true
+          } else if (event.type === 'reasoning') write('reasoning', event.text)
+          else if (event.type === 'tool') write('reasoning', `▸ ${event.name}${event.detail ? ` · ${workspaceRelative(event.detail, cwd)}` : ''}\n`)
+          else if (event.type === 'error' && !event.fatal) write('reasoning', `! ${event.message}\n`)
+        },
+      })
 
-  // Settle state and wake the consumer in ONE callback: waking from a separate
-  // `.finally()` raced the `.then()` that stores the result and could leave the
-  // loop parked forever with the run already finished (seen live in DSH).
-  let result: Awaited<typeof runPromise> | undefined
-  let failure: unknown
-  let settled = false
-  void runPromise.then(
-    r => {
-      result = r
-      settled = true
-      wake?.()
-    },
-    (error: unknown) => {
-      failure = error
-      settled = true
-      wake?.()
-    },
-  )
-  for (;;) {
-    while (queue.length > 0) yield queue.shift()!
-    if (settled) break
-    await new Promise<void>(resolve => {
-      wake = resolve
-      if (queue.length > 0 || settled) resolve()
-    })
-    wake = undefined
+    // Settle state and wake the consumer in ONE callback: waking from a separate
+    // `.finally()` raced the `.then()` that stores the result and could leave the
+    // loop parked forever with the run already finished (seen live in DSH).
+    let result: RunResult | undefined
+    let failure: unknown
+    let settled = false
+    void runPromise.then(
+      r => {
+        result = r
+        settled = true
+        wake?.()
+      },
+      (error: unknown) => {
+        failure = error
+        settled = true
+        wake?.()
+      },
+    )
+    for (;;) {
+      while (queue.length > 0) yield queue.shift()!
+      if (settled) break
+      await new Promise<void>(resolve => {
+        wake = resolve
+        if (queue.length > 0 || settled) resolve()
+      })
+      wake = undefined
+    }
+
+    return { result, failure }
   }
+
+  let outcome = yield* attempt(prompt, resume)
+  // A native session that can no longer be resumed (deleted, made in another
+  // folder, or left broken by an interrupted turn) fails before any answer.
+  // Retry once as a fresh session with the earlier turns replayed as context.
+  if (resume !== undefined && !emitted && (outcome.result === undefined || outcome.result.status === 'error')) {
+    const fresh = buildTurnPrompt(turns, undefined, kernel)
+    write('reasoning', `! ${kernel.name} could not resume the previous session; continuing in a new one with the conversation as context.\n`)
+    close()
+    outcome = yield* attempt(fresh.prompt, undefined)
+  }
+  const { result, failure } = outcome
   if (result === undefined) {
     const message = failure instanceof Error ? failure.message : String(failure)
     yield { type: 'finish', reason: { kind: 'error', failure: { message, code: 'KERNEL_FAILED' } } } as StreamChunk
