@@ -43,7 +43,11 @@ What a turn sends to the CLI (`src/dsh/kernel-chat.ts`):
 - **One-shot calls.** A request with `purpose` or `system`, or made only of
   request inputs (no Session message ids or sources), is a hand-built
   one-shot by the dsh-llm contract; it goes to the gateway model and never
-  starts the CLI or touches the session's resume state.
+  starts the CLI or touches the session's resume state. The same holds for a
+  question on a snapshot of a Session: durable Session messages followed by a
+  trailing user-role request input (DS Bot's `/btw`). The agent loop never
+  builds that shape, and the Session does not record the question, so the CLI
+  must not either.
 
 `KernelService.run` caps concurrent CLI runs (`kernelMaxConcurrent`,
 `kernelMaxConcurrentPerCli`) with a FIFO queue (`src/kernels/limiter.ts`); a

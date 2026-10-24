@@ -27,7 +27,11 @@ All notable changes to this project are documented here. The format follows
   tools, is not forwarded.
 - One-shot model calls on a CLI route (a `system` field, a `purpose`, or only
   request inputs, such as DS Bot's memory summaries) go to the gateway model
-  and never start the CLI or change its resume state.
+  and never start the CLI or change its resume state. So does a side question
+  asked on a snapshot of the chat (the Session's messages followed by one
+  request input, such as DS Bot 0.2.1's `/btw`): it is answered from the
+  conversation so far, the CLI does not keep it in its own history, and the
+  next message still resumes the CLI's session.
 - The CLI routes declare text-only input, so callers such as DS Bot turn
   images into text before a turn reaches the CLI.
 - **Concurrency caps for CLI runs:** `kernelMaxConcurrent` (default 6) and

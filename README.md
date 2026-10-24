@@ -183,8 +183,10 @@ one for a Bot in its settings or the Create Bot form; nothing else is needed.
 - The Bot's name, role, instructions and team rules reach the CLI as extra
   system instructions (Claude Code: `--append-system-prompt-file`; Codex:
   developer instructions; other CLIs: on top of a new session's prompt). DS
-  Bot's memory summaries and other one-shot calls on a CLI Bot's model go to
-  the gateway model instead of starting the CLI. Images are read into text by
+  Bot's memory summaries, `/btw` side questions (ds-bot 0.2.1) and other
+  one-shot calls on a CLI Bot's model go to the gateway model instead of
+  starting the CLI: a side question is answered from the chat so far and stays
+  out of the CLI's own session. Images are read into text by
   DS Bot's image reader first, because the CLI routes declare text-only input.
 - **Long tasks:** DS Bot gives a group turn about 4 minutes. A CLI task that
   runs longer shows "(no answer)" first; its result is posted to the group

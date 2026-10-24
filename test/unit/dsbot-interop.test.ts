@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { buildTurnPrompt, ChatSessionMap, conversationTurns, identityPrompt, isConversationMessage, kernelChatStream, MAX_IDENTITY_CHARS, type KernelChatDeps } from '../../src/dsh/kernel-chat.js'
-import { isOneShotRequest, LuluxFlowKernelAdapter } from '../../src/dsh/providers.js'
+import { isOneShotRequest, isSnapshotQuestion, LuluxFlowKernelAdapter } from '../../src/dsh/providers.js'
 import { findKernel } from '../../src/kernels/catalog.js'
 import { KernelLimiter, queuedLine, type KernelQueueStatus } from '../../src/kernels/limiter.js'
 import { systemPromptPlacement, withSystemPrompt } from '../../src/kernels/runner.js'
@@ -276,6 +276,70 @@ describe('one-shot requests (ds-bot memory oneShot, steward, compaction, titles)
     const adapter = new LuluxFlowKernelAdapter(() => kernel, d)
     await drain(adapter.stream({ provider: 'lulux-flow-claude-code', model: 'default', sessionId: 's', messages: [system('# DeepSeek Harness'), user('hi')] } as unknown as GenerateOptions))
     expect(runs).toBe(1)
+  })
+})
+
+// btw.js (ds-bot 0.2.1): the Bot's derived Session messages, then one request input.
+const btwRequest = (sessionId: string, history: unknown[]) => ({
+  provider: 'lulux-flow-claude-code',
+  model: 'default',
+  sessionId,
+  tools: [{ name: 'message_bot', description: 'x', parameters: {} }],
+  toolHistory: { tools: [], updates: [] },
+  messages: [...history, { role: 'user', content: [{ type: 'text', text: 'ds-bot/btw\nAnswer briefly from the conversation so far…\n\nQuestion: what are you doing?' }] }],
+}) as unknown as GenerateOptions
+
+describe('side questions on a snapshot of the chat (ds-bot 0.2.1 /btw)', () => {
+  const kernel = findKernel('claude-code')!
+  const history = () => [system(DSH_SYSTEM), user('[Bot team setup]', kickoff), user('tick', clock), assistant('Hi'), user('fix the parser'), assistant('Working on it.')]
+
+  it('is recognised by shape: durable messages, then one trailing request input', () => {
+    expect(isOneShotRequest(btwRequest('bot-1', history()))).toBe(true)
+    expect(isSnapshotQuestion(btwRequest('bot-1', history()).messages as never)).toBe(true)
+    // Loop-built turns end with a durable message, whatever its source.
+    expect(isOneShotRequest({ messages: [...history(), user('next', relay('room'))] } as unknown as GenerateOptions)).toBe(false)
+    expect(isOneShotRequest({ messages: [...history(), user('typed')] } as unknown as GenerateOptions)).toBe(false)
+    // A trailing input that is not a user message, or one that has a source, is not a question.
+    expect(isSnapshotQuestion([...history(), { role: 'assistant', content: [] }])).toBe(false)
+    expect(isSnapshotQuestion([...history(), { role: 'user', source: { kind: 'user' } }])).toBe(false)
+  })
+
+  it('goes to the auxiliary model with the snapshot, never runs the CLI, and keeps native resume for the next turn', async () => {
+    let runs = 0
+    const prompts: Array<Record<string, unknown>> = []
+    const auxCalls: GenerateOptions[] = []
+    const d = deps(
+      async req => {
+        runs += 1
+        prompts.push(req)
+        return completed('cli')
+      },
+      options => {
+        auxCalls.push(options)
+        return (async function* () {
+          yield { type: 'block-start', index: 0, blockType: 'text' } as StreamChunk
+          yield { type: 'text-delta', index: 0, text: 'Fixing the parser.' } as StreamChunk
+          yield { type: 'finish', reason: { kind: 'stop' } } as StreamChunk
+        })()
+      },
+    )
+    const binding = { kernelId: kernel.id, nativeSessionId: 'n-keep', deliveredTurns: 2, updatedAt: new Date().toISOString() }
+    d.sessions.set('bot-1', binding)
+    const adapter = new LuluxFlowKernelAdapter(() => kernel, d)
+    const request = btwRequest('bot-1', history())
+    const chunks = await drain(adapter.stream(request))
+    expect(runs).toBe(0)
+    expect(auxCalls).toHaveLength(1)
+    expect(auxCalls[0]!.messages).toBe(request.messages)
+    expect(auxCalls[0]!.tools).toBe(request.tools)
+    expect(chunks.filter(c => c.type === 'text-delta').map(c => (c as { text: string }).text).join('')).toBe('Fixing the parser.')
+    expect(d.sessions.get('bot-1', kernel.id)).toMatchObject({ nativeSessionId: 'n-keep', deliveredTurns: 2 })
+
+    // The next real message resumes the same native session with only the new text.
+    await drain(adapter.stream({ provider: 'lulux-flow-claude-code', model: 'default', sessionId: 'bot-1', messages: [...history(), user('and add a test')] } as unknown as GenerateOptions))
+    expect(runs).toBe(1)
+    expect(prompts[0]!.prompt).toBe('and add a test')
+    expect(prompts[0]!.resumeSessionId).toBe('n-keep')
   })
 })
 

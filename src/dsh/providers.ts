@@ -25,11 +25,33 @@ const TEXT_ONLY: NonNullable<LlmModelInfo['inputModalities']> = ['text']
  * system message and leave it undefined; and a loop-built request holds
  * durable Session messages, each with an `id` and a `source`, while a
  * hand-built one may hold only request inputs, which have neither.
+ *
+ * A hand-built request can also put one request input after a copy of a
+ * Session's durable messages: a side question asked on a snapshot of the
+ * conversation (DS Bot's `/btw` aside, from ds-bot 0.2.1). Nothing of it is
+ * written into the Session, so it must not reach the CLI either: a resumed
+ * CLI session would keep the question in its own history, and the Session's
+ * delivered-turn count would run ahead of the Session, which costs the next
+ * real turn its resume.
  */
 export function isOneShotRequest(options: Pick<GenerateOptions, 'purpose' | 'system' | 'messages'>): boolean {
   if (options.purpose !== undefined || options.system !== undefined) return true
-  const messages = options.messages as ReadonlyArray<{ id?: unknown; source?: unknown }>
-  return messages.length > 0 && messages.every(message => message.id === undefined && message.source === undefined)
+  const messages = options.messages as ReadonlyArray<{ role?: unknown; id?: unknown; source?: unknown }>
+  if (messages.length === 0) return false
+  const isInput = (message: { id?: unknown; source?: unknown }): boolean => message.id === undefined && message.source === undefined
+  if (messages.every(isInput)) return true
+  return isSnapshotQuestion(messages)
+}
+
+/**
+ * A question on a snapshot of a Session: durable Session messages, then a
+ * trailing user-role request input (no `id`, no `source`). The agent loop never
+ * builds this shape: every message it sends is a durable Session message.
+ */
+export function isSnapshotQuestion(messages: ReadonlyArray<{ role?: unknown; id?: unknown; source?: unknown }>): boolean {
+  const last = messages.at(-1)
+  if (last === undefined || last.role !== 'user' || last.id !== undefined || last.source !== undefined) return false
+  return messages.some(message => message.id !== undefined)
 }
 
 export const providerName = (kernelId: string): string => `${BRAND.providerPrefix}-${kernelId}`
@@ -143,8 +165,9 @@ export class LuluxFlowKernelAdapter extends LlmAdapter {
       yield { type: 'finish', reason: { kind: 'error', failure: { message: `unknown kernel route ${options.provider}`, code: 'KERNEL_UNKNOWN' } } } as StreamChunk
       return
     }
-    // One-shot calls (titles, compaction, a plugin's summary) must not spawn a CLI or
-    // touch the session's native resume state: answer them through the upstream model.
+    // One-shot calls (titles, compaction, a plugin's summary, a side question on a
+    // snapshot of the chat) must not spawn a CLI or touch the session's native resume
+    // state: answer them through the upstream model.
     if (isOneShotRequest(options)) {
       yield* this.deps.auxiliary(options)
       return
